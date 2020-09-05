@@ -1,549 +1,540 @@
-/*
- * Copyright 2020 Mamoe Technologies and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
- *
- * https://github.com/mamoe/mirai/blob/master/LICENSE
- */
-
 package net.mamoe.mirai.qqandroid.network.protocol.data.proto
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.protobuf.ProtoId
+import kotlinx.serialization.protobuf.ProtoNumber
 import net.mamoe.mirai.qqandroid.network.protocol.packet.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.qqandroid.utils.io.ProtoBuf
+import kotlin.jvm.JvmField
 
-@Serializable
-class Common : ProtoBuf {
+internal class Common : ProtoBuf {
     @Serializable
-    class BindInfo(
-        @ProtoId(1) val friUin: Long = 0L,
-        @ProtoId(2) val friNick: String = "",
-        @ProtoId(3) val time: Long = 0L,
-        @ProtoId(4) val bindStatus: Int = 0
+    internal class BindInfo(
+        @ProtoNumber(1) @JvmField val friUin: Long = 0L,
+        @ProtoNumber(2) @JvmField val friNick: String = "",
+        @ProtoNumber(3) @JvmField val time: Long = 0L,
+        @ProtoNumber(4) @JvmField val bindStatus: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class MedalInfo(
-        @ProtoId(1) val id: Int = 0,
-        @ProtoId(2) val type: Int = 0,
-        @ProtoId(4) val seq: Long = 0,
-        @ProtoId(5) val name: String = "",
-        @ProtoId(6) val newflag: Int = 0,
-        @ProtoId(7) val time: Long = 0L,
-        @ProtoId(8) val msgBindFri: Common.BindInfo? = null,
-        @ProtoId(11) val desc: String = "",
-        @ProtoId(31) val level: Int = 0,
-        @ProtoId(36) val taskinfos: List<Common.MedalTaskInfo>? = null,
-        @ProtoId(40) val point: Int = 0,
-        @ProtoId(41) val pointLevel2: Int = 0,
-        @ProtoId(42) val pointLevel3: Int = 0,
-        @ProtoId(43) val seqLevel2: Long = 0,
-        @ProtoId(44) val seqLevel3: Long = 0,
-        @ProtoId(45) val timeLevel2: Long = 0L,
-        @ProtoId(46) val timeLevel3: Long = 0L,
-        @ProtoId(47) val descLevel2: String = "",
-        @ProtoId(48) val descLevel3: String = "",
-        @ProtoId(49) val endtime: Int = 0,
-        @ProtoId(50) val detailUrl: String = "",
-        @ProtoId(51) val detailUrl2: String = "",
-        @ProtoId(52) val detailUrl3: String = "",
-        @ProtoId(53) val taskDesc: String = "",
-        @ProtoId(54) val taskDesc2: String = "",
-        @ProtoId(55) val taskDesc3: String = "",
-        @ProtoId(56) val levelCount: Int = 0,
-        @ProtoId(57) val noProgress: Int = 0,
-        @ProtoId(58) val resource: String = "",
-        @ProtoId(59) val fromuinLevel: Int = 0,
-        @ProtoId(60) val unread: Int = 0,
-        @ProtoId(61) val unread2: Int = 0,
-        @ProtoId(62) val unread3: Int = 0
+    internal class MedalInfo(
+        @ProtoNumber(1) @JvmField val id: Int = 0,
+        @ProtoNumber(2) @JvmField val type: Int = 0,
+        @ProtoNumber(4) @JvmField val seq: Long = 0,
+        @ProtoNumber(5) @JvmField val name: String = "",
+        @ProtoNumber(6) @JvmField val newflag: Int = 0,
+        @ProtoNumber(7) @JvmField val time: Long = 0L,
+        @ProtoNumber(8) @JvmField val msgBindFri: BindInfo? = null,
+        @ProtoNumber(11) @JvmField val desc: String = "",
+        @ProtoNumber(31) @JvmField val level: Int = 0,
+        @ProtoNumber(36) @JvmField val taskinfos: List<MedalTaskInfo>? = null,
+        @ProtoNumber(40) @JvmField val point: Int = 0,
+        @ProtoNumber(41) @JvmField val pointLevel2: Int = 0,
+        @ProtoNumber(42) @JvmField val pointLevel3: Int = 0,
+        @ProtoNumber(43) @JvmField val seqLevel2: Long = 0,
+        @ProtoNumber(44) @JvmField val seqLevel3: Long = 0,
+        @ProtoNumber(45) @JvmField val timeLevel2: Long = 0L,
+        @ProtoNumber(46) @JvmField val timeLevel3: Long = 0L,
+        @ProtoNumber(47) @JvmField val descLevel2: String = "",
+        @ProtoNumber(48) @JvmField val descLevel3: String = "",
+        @ProtoNumber(49) @JvmField val endtime: Int = 0,
+        @ProtoNumber(50) @JvmField val detailUrl: String = "",
+        @ProtoNumber(51) @JvmField val detailUrl2: String = "",
+        @ProtoNumber(52) @JvmField val detailUrl3: String = "",
+        @ProtoNumber(53) @JvmField val taskDesc: String = "",
+        @ProtoNumber(54) @JvmField val taskDesc2: String = "",
+        @ProtoNumber(55) @JvmField val taskDesc3: String = "",
+        @ProtoNumber(56) @JvmField val levelCount: Int = 0,
+        @ProtoNumber(57) @JvmField val noProgress: Int = 0,
+        @ProtoNumber(58) @JvmField val resource: String = "",
+        @ProtoNumber(59) @JvmField val fromuinLevel: Int = 0,
+        @ProtoNumber(60) @JvmField val unread: Int = 0,
+        @ProtoNumber(61) @JvmField val unread2: Int = 0,
+        @ProtoNumber(62) @JvmField val unread3: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class MedalTaskInfo(
-        @ProtoId(1) val taskid: Int = 0,
-        @ProtoId(32) val int32TaskValue: Int = 0,
-        @ProtoId(33) val tarValue: Int = 0,
-        @ProtoId(34) val tarValueLevel2: Int = 0,
-        @ProtoId(35) val tarValueLevel3: Int = 0
+    internal class MedalTaskInfo(
+        @ProtoNumber(1) @JvmField val taskid: Int = 0,
+        @ProtoNumber(32) @JvmField val int32TaskValue: Int = 0,
+        @ProtoNumber(33) @JvmField val tarValue: Int = 0,
+        @ProtoNumber(34) @JvmField val tarValueLevel2: Int = 0,
+        @ProtoNumber(35) @JvmField val tarValueLevel3: Int = 0
     ) : ProtoBuf
 }
 
 @Serializable
-class AppointDefine : ProtoBuf {
+internal class AppointDefine : ProtoBuf {
     @Serializable
-    class ADFeedContent(
-        @ProtoId(1) val msgUserInfo: AppointDefine.UserInfo? = null,
-        @ProtoId(2) val strPicUrl: List<String> = listOf(),
-        @ProtoId(3) val msgText: AppointDefine.RichText? = null,
-        @ProtoId(4) val attendInfo: String = "",
-        @ProtoId(5) val actionUrl: String = "",
-        @ProtoId(6) val publishTime: Int = 0,
-        @ProtoId(7) val msgHotTopicList: AppointDefine.HotTopicList? = null,
-        @ProtoId(8) val moreUrl: String = "",
-        @ProtoId(9) val recordDuration: String = ""
+    internal class ADFeedContent(
+        @ProtoNumber(1) @JvmField val msgUserInfo: UserInfo? = null,
+        @ProtoNumber(2) @JvmField val strPicUrl: List<String> = listOf(),
+        @ProtoNumber(3) @JvmField val msgText: RichText? = null,
+        @ProtoNumber(4) @JvmField val attendInfo: String = "",
+        @ProtoNumber(5) @JvmField val actionUrl: String = "",
+        @ProtoNumber(6) @JvmField val publishTime: Int = 0,
+        @ProtoNumber(7) @JvmField val msgHotTopicList: HotTopicList? = null,
+        @ProtoNumber(8) @JvmField val moreUrl: String = "",
+        @ProtoNumber(9) @JvmField val recordDuration: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class RichText(
-        @ProtoId(1) val msgElems: List<AppointDefine.Elem>? = null
+    internal class RichText(
+        @ProtoNumber(1) @JvmField val msgElems: List<Elem>? = null
     ) : ProtoBuf
 
     @Serializable
-    class RankEvent(
-        @ProtoId(1) val listtype: Int = 0,
-        @ProtoId(2) val notifytype: Int = 0,
-        @ProtoId(3) val eventtime: Int = 0,
-        @ProtoId(4) val seq: Int = 0,
-        @ProtoId(5) val notifyTips: String = ""
+    internal class RankEvent(
+        @ProtoNumber(1) @JvmField val listtype: Int = 0,
+        @ProtoNumber(2) @JvmField val notifytype: Int = 0,
+        @ProtoNumber(3) @JvmField val eventtime: Int = 0,
+        @ProtoNumber(4) @JvmField val seq: Int = 0,
+        @ProtoNumber(5) @JvmField val notifyTips: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class Wifi(
-        @ProtoId(1) val mac: Long = 0L,
-        @ProtoId(2) val int32Rssi: Int = 0
+    internal class Wifi(
+        @ProtoNumber(1) @JvmField val mac: Long = 0L,
+        @ProtoNumber(2) @JvmField val int32Rssi: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class InterestItem(
-        @ProtoId(1) val tagId: Long = 0L,
-        @ProtoId(2) val tagName: String = "",
-        @ProtoId(3) val tagIconUrl: String = "",
-        @ProtoId(4) val tagHref: String = "",
-        @ProtoId(5) val tagBackColor: String = "",
-        @ProtoId(6) val tagFontColor: String = "",
-        @ProtoId(7) val tagVid: String = "",
-        @ProtoId(8) val tagType: Int = 0,
-        @ProtoId(9) val addTime: Int = 0,
-        @ProtoId(10) val tagCategory: String = "",
-        @ProtoId(11) val tagOtherUrl: String = "",
-        @ProtoId(12) val bid: Int = 0
+    internal class InterestItem(
+        @ProtoNumber(1) @JvmField val tagId: Long = 0L,
+        @ProtoNumber(2) @JvmField val tagName: String = "",
+        @ProtoNumber(3) @JvmField val tagIconUrl: String = "",
+        @ProtoNumber(4) @JvmField val tagHref: String = "",
+        @ProtoNumber(5) @JvmField val tagBackColor: String = "",
+        @ProtoNumber(6) @JvmField val tagFontColor: String = "",
+        @ProtoNumber(7) @JvmField val tagVid: String = "",
+        @ProtoNumber(8) @JvmField val tagType: Int = 0,
+        @ProtoNumber(9) @JvmField val addTime: Int = 0,
+        @ProtoNumber(10) @JvmField val tagCategory: String = "",
+        @ProtoNumber(11) @JvmField val tagOtherUrl: String = "",
+        @ProtoNumber(12) @JvmField val bid: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class ShopID(
-        @ProtoId(1) val shopid: String = "",
-        @ProtoId(2) val sp: Int = 0
+    internal class ShopID(
+        @ProtoNumber(1) @JvmField val shopid: String = "",
+        @ProtoNumber(2) @JvmField val sp: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class FeedComment(
-        @ProtoId(1) val commentId: String = "",
-        @ProtoId(2) val feedId: String = "",
-        @ProtoId(3) val msgPublisherInfo: AppointDefine.StrangerInfo? = null,
-        @ProtoId(4) val time: Int = 0,
-        @ProtoId(6) val msgReplyInfo: AppointDefine.ReplyInfo? = null,
-        @ProtoId(7) val flag: Int = 0,
-        @ProtoId(8) val msgContent: AppointDefine.RichText? = null,
-        @ProtoId(9) val hot: Int = 0
+    internal class FeedComment(
+        @ProtoNumber(1) @JvmField val commentId: String = "",
+        @ProtoNumber(2) @JvmField val feedId: String = "",
+        @ProtoNumber(3) @JvmField val msgPublisherInfo: StrangerInfo? = null,
+        @ProtoNumber(4) @JvmField val time: Int = 0,
+        @ProtoNumber(6) @JvmField val msgReplyInfo: ReplyInfo? = null,
+        @ProtoNumber(7) @JvmField val flag: Int = 0,
+        @ProtoNumber(8) @JvmField val msgContent: RichText? = null,
+        @ProtoNumber(9) @JvmField val hot: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class ADFeed(
-        @ProtoId(1) val taskId: Int = 0,
-        @ProtoId(2) val style: Int = 0,
-        @ProtoId(3) val content: ByteArray = EMPTY_BYTE_ARRAY
+    internal class ADFeed(
+        @ProtoNumber(1) @JvmField val taskId: Int = 0,
+        @ProtoNumber(2) @JvmField val style: Int = 0,
+        @ProtoNumber(3) @JvmField val content: ByteArray = EMPTY_BYTE_ARRAY
     ) : ProtoBuf
 
     @Serializable
-    class Cell(
-        @ProtoId(1) val int32Mcc: Int = -1,
-        @ProtoId(2) val int32Mnc: Int = -1,
-        @ProtoId(3) val int32Lac: Int = -1,
-        @ProtoId(4) val int32Cellid: Int = -1,
-        @ProtoId(5) val int32Rssi: Int = 0
+    internal class Cell(
+        @ProtoNumber(1) @JvmField val int32Mcc: Int = -1,
+        @ProtoNumber(2) @JvmField val int32Mnc: Int = -1,
+        @ProtoNumber(3) @JvmField val int32Lac: Int = -1,
+        @ProtoNumber(4) @JvmField val int32Cellid: Int = -1,
+        @ProtoNumber(5) @JvmField val int32Rssi: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class RecentVistorEvent(
-        @ProtoId(1) val eventtype: Int = 0,
-        @ProtoId(2) val eventTinyid: Long = 0L,
-        @ProtoId(3) val unreadCount: Int = 0
+    internal class RecentVistorEvent(
+        @ProtoNumber(1) @JvmField val eventtype: Int = 0,
+        @ProtoNumber(2) @JvmField val eventTinyid: Long = 0L,
+        @ProtoNumber(3) @JvmField val unreadCount: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class OrganizerInfo(
-        @ProtoId(1) val hostName: String = "",
-        @ProtoId(2) val hostUrl: String = "",
-        @ProtoId(3) val hostCover: String = ""
+    internal class OrganizerInfo(
+        @ProtoNumber(1) @JvmField val hostName: String = "",
+        @ProtoNumber(2) @JvmField val hostUrl: String = "",
+        @ProtoNumber(3) @JvmField val hostCover: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class InterestTag(
-        @ProtoId(1) val tagType: Int = 0,
-        @ProtoId(2) val msgTagList: List<AppointDefine.InterestItem>? = null
+    internal class InterestTag(
+        @ProtoNumber(1) @JvmField val tagType: Int = 0,
+        @ProtoNumber(2) @JvmField val msgTagList: List<InterestItem>? = null
     ) : ProtoBuf
 
     @Serializable
-    class AppointInfoEx(
-        @ProtoId(1) val feedsPicUrl: String = "",
-        @ProtoId(2) val feedsUrl: String = "",
-        @ProtoId(3) val detailTitle: String = "",
-        @ProtoId(4) val detailDescribe: String = "",
-        @ProtoId(5) val showPublisher: Int = 0,
-        @ProtoId(6) val detailPicUrl: String = "",
-        @ProtoId(7) val detailUrl: String = "",
-        @ProtoId(8) val showAttend: Int = 0
+    internal class AppointInfoEx(
+        @ProtoNumber(1) @JvmField val feedsPicUrl: String = "",
+        @ProtoNumber(2) @JvmField val feedsUrl: String = "",
+        @ProtoNumber(3) @JvmField val detailTitle: String = "",
+        @ProtoNumber(4) @JvmField val detailDescribe: String = "",
+        @ProtoNumber(5) @JvmField val showPublisher: Int = 0,
+        @ProtoNumber(6) @JvmField val detailPicUrl: String = "",
+        @ProtoNumber(7) @JvmField val detailUrl: String = "",
+        @ProtoNumber(8) @JvmField val showAttend: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class DateComment(
-        @ProtoId(1) val commentId: String = "",
-        @ProtoId(2) val msgAppointId: AppointDefine.AppointID? = null,
-        @ProtoId(3) val msgPublisherInfo: AppointDefine.StrangerInfo? = null,
-        @ProtoId(4) val time: Int = 0,
-        @ProtoId(6) val msgReplyInfo: AppointDefine.ReplyInfo? = null,
-        @ProtoId(7) val flag: Int = 0,
-        @ProtoId(8) val msgContent: AppointDefine.RichText? = null
+    internal class DateComment(
+        @ProtoNumber(1) @JvmField val commentId: String = "",
+        @ProtoNumber(2) @JvmField val msgAppointId: AppointID? = null,
+        @ProtoNumber(3) @JvmField val msgPublisherInfo: StrangerInfo? = null,
+        @ProtoNumber(4) @JvmField val time: Int = 0,
+        @ProtoNumber(6) @JvmField val msgReplyInfo: ReplyInfo? = null,
+        @ProtoNumber(7) @JvmField val flag: Int = 0,
+        @ProtoNumber(8) @JvmField val msgContent: RichText? = null
     ) : ProtoBuf
 
     @Serializable
-    class AppointContent(
-        @ProtoId(1) val appointSubject: Int = 0,
-        @ProtoId(2) val payType: Int = 0,
-        @ProtoId(3) val appointDate: Int = 0,
-        @ProtoId(4) val appointGender: Int = 0,
-        @ProtoId(5) val appointIntroduce: String = "",
-        @ProtoId(6) val msgAppointAddress: AppointDefine.AddressInfo? = null,
-        @ProtoId(7) val msgTravelInfo: AppointDefine.TravelInfo? = null
+    internal class AppointContent(
+        @ProtoNumber(1) @JvmField val appointSubject: Int = 0,
+        @ProtoNumber(2) @JvmField val payType: Int = 0,
+        @ProtoNumber(3) @JvmField val appointDate: Int = 0,
+        @ProtoNumber(4) @JvmField val appointGender: Int = 0,
+        @ProtoNumber(5) @JvmField val appointIntroduce: String = "",
+        @ProtoNumber(6) @JvmField val msgAppointAddress: AddressInfo? = null,
+        @ProtoNumber(7) @JvmField val msgTravelInfo: TravelInfo? = null
     ) : ProtoBuf
 
     @Serializable
-    class FeedInfo(
-        @ProtoId(1) val feedType: Long = 0L,
-        @ProtoId(2) val feedId: String = "",
-        @ProtoId(3) val msgFeedContent: AppointDefine.FeedContent? = null,
-        @ProtoId(4) val msgTopicInfo: AppointDefine.NearbyTopic? = null,
-        @ProtoId(5) val publishTime: Long = 0,
-        @ProtoId(6) val praiseCount: Int = 0,
-        @ProtoId(7) val praiseFlag: Int = 0,
-        @ProtoId(8) val msgPraiseUser: List<AppointDefine.StrangerInfo>? = null,
-        @ProtoId(9) val commentCount: Int = 0,
-        @ProtoId(10) val msgCommentList: List<AppointDefine.FeedComment>? = null,
-        @ProtoId(11) val commentRetAll: Int = 0,
-        @ProtoId(12) val hotFlag: Int = 0,
-        @ProtoId(13) val svrReserved: Long = 0L,
-        @ProtoId(14) val msgHotEntry: AppointDefine.HotEntry? = null
+    internal class FeedInfo(
+        @ProtoNumber(1) @JvmField val feedType: Long = 0L,
+        @ProtoNumber(2) @JvmField val feedId: String = "",
+        @ProtoNumber(3) @JvmField val msgFeedContent: FeedContent? = null,
+        @ProtoNumber(4) @JvmField val msgTopicInfo: NearbyTopic? = null,
+        @ProtoNumber(5) @JvmField val publishTime: Long = 0,
+        @ProtoNumber(6) @JvmField val praiseCount: Int = 0,
+        @ProtoNumber(7) @JvmField val praiseFlag: Int = 0,
+        @ProtoNumber(8) @JvmField val msgPraiseUser: List<StrangerInfo>? = null,
+        @ProtoNumber(9) @JvmField val commentCount: Int = 0,
+        @ProtoNumber(10) @JvmField val msgCommentList: List<FeedComment>? = null,
+        @ProtoNumber(11) @JvmField val commentRetAll: Int = 0,
+        @ProtoNumber(12) @JvmField val hotFlag: Int = 0,
+        @ProtoNumber(13) @JvmField val svrReserved: Long = 0L,
+        @ProtoNumber(14) @JvmField val msgHotEntry: HotEntry? = null
     ) : ProtoBuf
 
     @Serializable
-    class HotTopicList(
-        @ProtoId(1) val topicList: List<AppointDefine.HotTopic>? = null
+    internal class HotTopicList(
+        @ProtoNumber(1) @JvmField val topicList: List<HotTopic>? = null
     ) : ProtoBuf
 
     @Serializable
-    class FeedContent(
-        @ProtoId(1) val strPicUrl: List<String> = listOf(),
-        @ProtoId(2) val msgText: AppointDefine.RichText? = null,
-        @ProtoId(3) val hrefUrl: String = "",
-        @ProtoId(5) val groupName: String = "",
-        @ProtoId(6) val groupBulletin: String = "",
-        @ProtoId(7) val feedType: Int = 0,
-        @ProtoId(8) val poiId: String = "",
-        @ProtoId(9) val poiTitle: String = "",
-        @ProtoId(20) val effectiveTime: Int = 0,
-        @ProtoId(21) val expiationTime: Int = 0,
-        @ProtoId(22) val msgLocale: AppointDefine.LocaleInfo? = null,
-        @ProtoId(23) val feedsIndex: Int = 0,
-        @ProtoId(24) val msgAd: AppointDefine.ADFeed? = null,
-        @ProtoId(25) val privateData: ByteArray = EMPTY_BYTE_ARRAY
+    internal class FeedContent(
+        @ProtoNumber(1) @JvmField val strPicUrl: List<String> = listOf(),
+        @ProtoNumber(2) @JvmField val msgText: RichText? = null,
+        @ProtoNumber(3) @JvmField val hrefUrl: String = "",
+        @ProtoNumber(5) @JvmField val groupName: String = "",
+        @ProtoNumber(6) @JvmField val groupBulletin: String = "",
+        @ProtoNumber(7) @JvmField val feedType: Int = 0,
+        @ProtoNumber(8) @JvmField val poiId: String = "",
+        @ProtoNumber(9) @JvmField val poiTitle: String = "",
+        @ProtoNumber(20) @JvmField val effectiveTime: Int = 0,
+        @ProtoNumber(21) @JvmField val expiationTime: Int = 0,
+        @ProtoNumber(22) @JvmField val msgLocale: LocaleInfo? = null,
+        @ProtoNumber(23) @JvmField val feedsIndex: Int = 0,
+        @ProtoNumber(24) @JvmField val msgAd: ADFeed? = null,
+        @ProtoNumber(25) @JvmField val privateData: ByteArray = EMPTY_BYTE_ARRAY
     ) : ProtoBuf
 
     @Serializable
-    class TravelInfo(
-        @ProtoId(1) val msgDepartLocale: AppointDefine.LocaleInfo? = null,
-        @ProtoId(2) val msgDestination: AppointDefine.LocaleInfo? = null,
-        @ProtoId(3) val vehicle: Int = 0,
-        @ProtoId(4) val partnerCount: Int = 0,
-        @ProtoId(5) val placePicUrl: String = "",
-        @ProtoId(6) val placeUrl: String = ""
+    internal class TravelInfo(
+        @ProtoNumber(1) @JvmField val msgDepartLocale: LocaleInfo? = null,
+        @ProtoNumber(2) @JvmField val msgDestination: LocaleInfo? = null,
+        @ProtoNumber(3) @JvmField val vehicle: Int = 0,
+        @ProtoNumber(4) @JvmField val partnerCount: Int = 0,
+        @ProtoNumber(5) @JvmField val placePicUrl: String = "",
+        @ProtoNumber(6) @JvmField val placeUrl: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class RecentFreshFeed(
-        @ProtoId(1) val freshFeedInfo: List<AppointDefine.FreshFeedInfo>? = null,
-        @ProtoId(2) val uid: Long = 0L
+    internal class RecentFreshFeed(
+        @ProtoNumber(1) @JvmField val freshFeedInfo: List<FreshFeedInfo>? = null,
+        @ProtoNumber(2) @JvmField val uid: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class GPS(
-        @ProtoId(1) val int32Lat: Int = 900000000,
-        @ProtoId(2) val int32Lon: Int = 900000000,
-        @ProtoId(3) val int32Alt: Int = -10000000,
-        @ProtoId(4) val int32Type: Int = 0
+    internal class GPS(
+        @ProtoNumber(1) @JvmField val int32Lat: Int = 900000000,
+        @ProtoNumber(2) @JvmField val int32Lon: Int = 900000000,
+        @ProtoNumber(3) @JvmField val int32Alt: Int = -10000000,
+        @ProtoNumber(4) @JvmField val int32Type: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class AppointID(
-        @ProtoId(1) val requestId: String = ""
+    internal class AppointID(
+        @ProtoNumber(1) @JvmField val requestId: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class LocaleInfo(
-        @ProtoId(1) val name: String = "",
-        @ProtoId(2) val country: String = "",
-        @ProtoId(3) val province: String = "",
-        @ProtoId(4) val city: String = "",
-        @ProtoId(5) val region: String = "",
-        @ProtoId(6) val poi: String = "",
-        @ProtoId(7) val msgGps: AppointDefine.GPS? = null,
-        @ProtoId(8) val address: String = ""
+    internal class LocaleInfo(
+        @ProtoNumber(1) @JvmField val name: String = "",
+        @ProtoNumber(2) @JvmField val country: String = "",
+        @ProtoNumber(3) @JvmField val province: String = "",
+        @ProtoNumber(4) @JvmField val city: String = "",
+        @ProtoNumber(5) @JvmField val region: String = "",
+        @ProtoNumber(6) @JvmField val poi: String = "",
+        @ProtoNumber(7) @JvmField val msgGps: GPS? = null,
+        @ProtoNumber(8) @JvmField val address: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class LBSInfo(
-        @ProtoId(1) val msgGps: AppointDefine.GPS? = null,
-        @ProtoId(2) val msgWifis: List<AppointDefine.Wifi>? = null,
-        @ProtoId(3) val msgCells: List<AppointDefine.Cell>? = null
+    internal class LBSInfo(
+        @ProtoNumber(1) @JvmField val msgGps: GPS? = null,
+        @ProtoNumber(2) @JvmField val msgWifis: List<Wifi>? = null,
+        @ProtoNumber(3) @JvmField val msgCells: List<Cell>? = null
     ) : ProtoBuf
 
     @Serializable
-    class FeedEvent(
-        @ProtoId(1) val eventId: Long = 0L,
-        @ProtoId(2) val time: Int = 0,
-        @ProtoId(3) val eventtype: Int = 0,
-        @ProtoId(4) val msgUserInfo: AppointDefine.StrangerInfo? = null,
-        @ProtoId(5) val msgFeedInfo: AppointDefine.FeedInfo? = null,
-        @ProtoId(6) val eventTips: String = "",
-        @ProtoId(7) val msgComment: AppointDefine.FeedComment? = null,
-        @ProtoId(8) val cancelEventId: Long = 0L
+    internal class FeedEvent(
+        @ProtoNumber(1) @JvmField val eventId: Long = 0L,
+        @ProtoNumber(2) @JvmField val time: Int = 0,
+        @ProtoNumber(3) @JvmField val eventtype: Int = 0,
+        @ProtoNumber(4) @JvmField val msgUserInfo: StrangerInfo? = null,
+        @ProtoNumber(5) @JvmField val msgFeedInfo: FeedInfo? = null,
+        @ProtoNumber(6) @JvmField val eventTips: String = "",
+        @ProtoNumber(7) @JvmField val msgComment: FeedComment? = null,
+        @ProtoNumber(8) @JvmField val cancelEventId: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class FeedsCookie(
-        @ProtoId(1) val strList: List<String> = listOf(),
-        @ProtoId(2) val pose: Int = 0,
-        @ProtoId(3) val cookie: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(4) val uint64Topics: List<Long>? = null
+    internal class FeedsCookie(
+        @ProtoNumber(1) @JvmField val strList: List<String> = listOf(),
+        @ProtoNumber(2) @JvmField val pose: Int = 0,
+        @ProtoNumber(3) @JvmField val cookie: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(4) @JvmField val uint64Topics: List<Long>? = null
     ) : ProtoBuf
 
     @Serializable
-    class NearbyTopic(
-        @ProtoId(1) val topicId: Long = 0L,
-        @ProtoId(2) val topic: String = "",
-        @ProtoId(3) val foreword: String = "",
-        @ProtoId(4) val createTime: Int = 0,
-        @ProtoId(5) val updateTime: Int = 0,
-        @ProtoId(6) val hotFlag: Int = 0,
-        @ProtoId(7) val buttonStyle: Int = 0,
-        @ProtoId(8) val buttonSrc: String = "",
-        @ProtoId(9) val backgroundSrc: String = "",
-        @ProtoId(10) val attendeeInfo: String = "",
-        @ProtoId(11) val index: Int = 0,
-        @ProtoId(12) val publishScope: Int = 0,
-        @ProtoId(13) val effectiveTime: Int = 0,
-        @ProtoId(14) val expiationTime: Int = 0,
-        @ProtoId(15) val pushedUsrCount: Int = 0,
-        @ProtoId(16) val timerangeLeft: Int = 0,
-        @ProtoId(17) val timerangeRight: Int = 0,
-        @ProtoId(18) val area: String = ""
+    internal class NearbyTopic(
+        @ProtoNumber(1) @JvmField val topicId: Long = 0L,
+        @ProtoNumber(2) @JvmField val topic: String = "",
+        @ProtoNumber(3) @JvmField val foreword: String = "",
+        @ProtoNumber(4) @JvmField val createTime: Int = 0,
+        @ProtoNumber(5) @JvmField val updateTime: Int = 0,
+        @ProtoNumber(6) @JvmField val hotFlag: Int = 0,
+        @ProtoNumber(7) @JvmField val buttonStyle: Int = 0,
+        @ProtoNumber(8) @JvmField val buttonSrc: String = "",
+        @ProtoNumber(9) @JvmField val backgroundSrc: String = "",
+        @ProtoNumber(10) @JvmField val attendeeInfo: String = "",
+        @ProtoNumber(11) @JvmField val index: Int = 0,
+        @ProtoNumber(12) @JvmField val publishScope: Int = 0,
+        @ProtoNumber(13) @JvmField val effectiveTime: Int = 0,
+        @ProtoNumber(14) @JvmField val expiationTime: Int = 0,
+        @ProtoNumber(15) @JvmField val pushedUsrCount: Int = 0,
+        @ProtoNumber(16) @JvmField val timerangeLeft: Int = 0,
+        @ProtoNumber(17) @JvmField val timerangeRight: Int = 0,
+        @ProtoNumber(18) @JvmField val area: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class NearbyEvent(
-        @ProtoId(1) val eventtype: Int = 0,
-        @ProtoId(2) val msgRankevent: AppointDefine.RankEvent? = null,
-        @ProtoId(3) val eventUin: Long = 0L,
-        @ProtoId(4) val eventTinyid: Long = 0L
+    internal class NearbyEvent(
+        @ProtoNumber(1) @JvmField val eventtype: Int = 0,
+        @ProtoNumber(2) @JvmField val msgRankevent: RankEvent? = null,
+        @ProtoNumber(3) @JvmField val eventUin: Long = 0L,
+        @ProtoNumber(4) @JvmField val eventTinyid: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class Feed(
-        @ProtoId(1) val msgUserInfo: AppointDefine.PublisherInfo? = null,
-        @ProtoId(2) val msgFeedInfo: AppointDefine.FeedInfo? = null,
-        @ProtoId(3) val ownerFlag: Int = 0
+    internal class Feed(
+        @ProtoNumber(1) @JvmField val msgUserInfo: PublisherInfo? = null,
+        @ProtoNumber(2) @JvmField val msgFeedInfo: FeedInfo? = null,
+        @ProtoNumber(3) @JvmField val ownerFlag: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class ActivityInfo(
-        @ProtoId(2) val name: String = "",
-        @ProtoId(3) val cover: String = "",
-        @ProtoId(4) val url: String = "",
-        @ProtoId(5) val startTime: Int = 0,
-        @ProtoId(6) val endTime: Int = 0,
-        @ProtoId(7) val locName: String = "",
-        @ProtoId(8) val enroll: Long = 0L,
-        @ProtoId(9) val createUin: Long = 0L,
-        @ProtoId(10) val createTime: Int = 0,
-        @ProtoId(11) val organizerInfo: AppointDefine.OrganizerInfo = OrganizerInfo(),
-        @ProtoId(12) val flag: Long? = null
+    internal class ActivityInfo(
+        @ProtoNumber(2) @JvmField val name: String = "",
+        @ProtoNumber(3) @JvmField val cover: String = "",
+        @ProtoNumber(4) @JvmField val url: String = "",
+        @ProtoNumber(5) @JvmField val startTime: Int = 0,
+        @ProtoNumber(6) @JvmField val endTime: Int = 0,
+        @ProtoNumber(7) @JvmField val locName: String = "",
+        @ProtoNumber(8) @JvmField val enroll: Long = 0L,
+        @ProtoNumber(9) @JvmField val createUin: Long = 0L,
+        @ProtoNumber(10) @JvmField val createTime: Int = 0,
+        @ProtoNumber(11) @JvmField val organizerInfo: OrganizerInfo = OrganizerInfo(),
+        @ProtoNumber(12) @JvmField val flag: Long? = null
     ) : ProtoBuf
 
     @Serializable
-    class HotEntry(
-        @ProtoId(1) val openFlag: Int = 0,
-        @ProtoId(2) val restTime: Int = 0,
-        @ProtoId(3) val foreword: String = "",
-        @ProtoId(4) val backgroundSrc: String = ""
+    internal class HotEntry(
+        @ProtoNumber(1) @JvmField val openFlag: Int = 0,
+        @ProtoNumber(2) @JvmField val restTime: Int = 0,
+        @ProtoNumber(3) @JvmField val foreword: String = "",
+        @ProtoNumber(4) @JvmField val backgroundSrc: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class UserFeed(
-        @ProtoId(1) val msgUserInfo: AppointDefine.PublisherInfo? = null,
-        @ProtoId(2) val msgFeedInfo: AppointDefine.FeedInfo? = null,
-        @ProtoId(3) val ownerFlag: Int = 0,
-        @ProtoId(4) val msgActivityInfo: AppointDefine.ActivityInfo? = null
+    internal class UserFeed(
+        @ProtoNumber(1) @JvmField val msgUserInfo: PublisherInfo? = null,
+        @ProtoNumber(2) @JvmField val msgFeedInfo: FeedInfo? = null,
+        @ProtoNumber(3) @JvmField val ownerFlag: Int = 0,
+        @ProtoNumber(4) @JvmField val msgActivityInfo: ActivityInfo? = null
     ) : ProtoBuf
 
     @Serializable
-    class Elem(
-        @ProtoId(1) val content: String = "",
-        @ProtoId(2) val msgFaceInfo: AppointDefine.Face? = null
+    internal class Elem(
+        @ProtoNumber(1) @JvmField val content: String = "",
+        @ProtoNumber(2) @JvmField val msgFaceInfo: Face? = null
     ) : ProtoBuf
 
     @Serializable
-    class HotFreshFeedList(
-        @ProtoId(1) val msgFeeds: List<AppointDefine.HotUserFeed>? = null,
-        @ProtoId(2) val updateTime: Int = 0
+    internal class HotFreshFeedList(
+        @ProtoNumber(1) @JvmField val msgFeeds: List<HotUserFeed>? = null,
+        @ProtoNumber(2) @JvmField val updateTime: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class RptInterestTag(
-        @ProtoId(1) val interestTags: List<AppointDefine.InterestTag>? = null
+    internal class RptInterestTag(
+        @ProtoNumber(1) @JvmField val interestTags: List<InterestTag>? = null
     ) : ProtoBuf
 
     @Serializable
-    class AddressInfo(
-        @ProtoId(1) val companyZone: String = "",
-        @ProtoId(2) val companyName: String = "",
-        @ProtoId(3) val companyAddr: String = "",
-        @ProtoId(4) val companyPicUrl: String = "",
-        @ProtoId(5) val companyUrl: String = "",
-        @ProtoId(6) val msgCompanyId: AppointDefine.ShopID? = null
+    internal class AddressInfo(
+        @ProtoNumber(1) @JvmField val companyZone: String = "",
+        @ProtoNumber(2) @JvmField val companyName: String = "",
+        @ProtoNumber(3) @JvmField val companyAddr: String = "",
+        @ProtoNumber(4) @JvmField val companyPicUrl: String = "",
+        @ProtoNumber(5) @JvmField val companyUrl: String = "",
+        @ProtoNumber(6) @JvmField val msgCompanyId: ShopID? = null
     ) : ProtoBuf
 
     @Serializable
-    class PublisherInfo(
-        @ProtoId(1) val tinyid: Long = 0L,
-        @ProtoId(2) val nickname: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(3) val age: Int = 0,
-        @ProtoId(4) val gender: Int = 0,
-        @ProtoId(5) val constellation: String = "",
-        @ProtoId(6) val profession: Int = 0,
-        @ProtoId(7) val distance: String = "",
-        @ProtoId(8) val marriage: Int = 0,
-        @ProtoId(9) val vipinfo: String = "",
-        @ProtoId(10) val recommend: Int = 0,
-        @ProtoId(11) val godflag: Int = 0,
-        @ProtoId(12) val chatflag: Int = 0,
-        @ProtoId(13) val chatupCount: Int = 0,
-        @ProtoId(14) val charm: Int = 0,
-        @ProtoId(15) val charmLevel: Int = 0,
-        @ProtoId(16) val pubNumber: Int = 0,
-        @ProtoId(17) val msgCommonLabel: AppointDefine.CommonLabel? = null,
-        @ProtoId(18) val recentVistorTime: Int = 0,
-        @ProtoId(19) val strangerDeclare: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(20) val friendUin: Long = 0L,
-        @ProtoId(21) val historyFlag: Int = 0,
-        @ProtoId(22) val followflag: Long = 0L
+    internal class PublisherInfo(
+        @ProtoNumber(1) @JvmField val tinyid: Long = 0L,
+        @ProtoNumber(2) @JvmField val nickname: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(3) @JvmField val age: Int = 0,
+        @ProtoNumber(4) @JvmField val gender: Int = 0,
+        @ProtoNumber(5) @JvmField val constellation: String = "",
+        @ProtoNumber(6) @JvmField val profession: Int = 0,
+        @ProtoNumber(7) @JvmField val distance: String = "",
+        @ProtoNumber(8) @JvmField val marriage: Int = 0,
+        @ProtoNumber(9) @JvmField val vipinfo: String = "",
+        @ProtoNumber(10) @JvmField val recommend: Int = 0,
+        @ProtoNumber(11) @JvmField val godflag: Int = 0,
+        @ProtoNumber(12) @JvmField val chatflag: Int = 0,
+        @ProtoNumber(13) @JvmField val chatupCount: Int = 0,
+        @ProtoNumber(14) @JvmField val charm: Int = 0,
+        @ProtoNumber(15) @JvmField val charmLevel: Int = 0,
+        @ProtoNumber(16) @JvmField val pubNumber: Int = 0,
+        @ProtoNumber(17) @JvmField val msgCommonLabel: CommonLabel? = null,
+        @ProtoNumber(18) @JvmField val recentVistorTime: Int = 0,
+        @ProtoNumber(19) @JvmField val strangerDeclare: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(20) @JvmField val friendUin: Long = 0L,
+        @ProtoNumber(21) @JvmField val historyFlag: Int = 0,
+        @ProtoNumber(22) @JvmField val followflag: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class HotUserFeed(
-        @ProtoId(1) val feedId: String = "",
-        @ProtoId(2) val praiseCount: Int = 0,
-        @ProtoId(3) val publishUid: Long = 0L,
-        @ProtoId(4) val publishTime: Int = 0
+    internal class HotUserFeed(
+        @ProtoNumber(1) @JvmField val feedId: String = "",
+        @ProtoNumber(2) @JvmField val praiseCount: Int = 0,
+        @ProtoNumber(3) @JvmField val publishUid: Long = 0L,
+        @ProtoNumber(4) @JvmField val publishTime: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class FreshFeedInfo(
-        @ProtoId(1) val uin: Long = 0L,
-        @ProtoId(2) val time: Int = 0,
-        @ProtoId(3) val feedId: String = "",
-        @ProtoId(4) val feedType: Long = 0L
+    internal class FreshFeedInfo(
+        @ProtoNumber(1) @JvmField val uin: Long = 0L,
+        @ProtoNumber(2) @JvmField val time: Int = 0,
+        @ProtoNumber(3) @JvmField val feedId: String = "",
+        @ProtoNumber(4) @JvmField val feedType: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class CommonLabel(
-        @ProtoId(1) val lableId: Int = 0,
-        @ProtoId(2) val lableMsgPre: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(3) val lableMsgLast: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(4) val interstName: List<ByteArray>? = null,
-        @ProtoId(5) val interstType: List<Int>? = null
+    internal class CommonLabel(
+        @ProtoNumber(1) @JvmField val lableId: Int = 0,
+        @ProtoNumber(2) @JvmField val lableMsgPre: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(3) @JvmField val lableMsgLast: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(4) @JvmField val interstName: List<ByteArray>? = null,
+        @ProtoNumber(5) @JvmField val interstType: List<Int>? = null
     ) : ProtoBuf
 
     @Serializable
-    class Face(
-        @ProtoId(1) val index: Int = 0
+    internal class Face(
+        @ProtoNumber(1) @JvmField val index: Int = 0
     ) : ProtoBuf
 
     @Serializable
-    class StrangerInfo(
-        @ProtoId(1) val tinyid: Long = 0L,
-        @ProtoId(2) val nickname: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(3) val age: Int = 0,
-        @ProtoId(4) val gender: Int = 0,
-        @ProtoId(5) val dating: Int = 0,
-        @ProtoId(6) val listIdx: Int = 0,
-        @ProtoId(7) val constellation: String = "",
-        @ProtoId(8) val profession: Int = 0,
-        @ProtoId(9) val marriage: Int = 0,
-        @ProtoId(10) val vipinfo: String = "",
-        @ProtoId(11) val recommend: Int = 0,
-        @ProtoId(12) val godflag: Int = 0,
-        @ProtoId(13) val charm: Int = 0,
-        @ProtoId(14) val charmLevel: Int = 0,
-        @ProtoId(15) val uin: Long = 0L
+    internal class StrangerInfo(
+        @ProtoNumber(1) @JvmField val tinyid: Long = 0L,
+        @ProtoNumber(2) @JvmField val nickname: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(3) @JvmField val age: Int = 0,
+        @ProtoNumber(4) @JvmField val gender: Int = 0,
+        @ProtoNumber(5) @JvmField val dating: Int = 0,
+        @ProtoNumber(6) @JvmField val listIdx: Int = 0,
+        @ProtoNumber(7) @JvmField val constellation: String = "",
+        @ProtoNumber(8) @JvmField val profession: Int = 0,
+        @ProtoNumber(9) @JvmField val marriage: Int = 0,
+        @ProtoNumber(10) @JvmField val vipinfo: String = "",
+        @ProtoNumber(11) @JvmField val recommend: Int = 0,
+        @ProtoNumber(12) @JvmField val godflag: Int = 0,
+        @ProtoNumber(13) @JvmField val charm: Int = 0,
+        @ProtoNumber(14) @JvmField val charmLevel: Int = 0,
+        @ProtoNumber(15) @JvmField val uin: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class HotTopic(
-        @ProtoId(1) val id: Long = 0L,
-        @ProtoId(2) val title: String = "",
-        @ProtoId(3) val topicType: Long = 0L,
-        @ProtoId(4) val total: Long = 0L,
-        @ProtoId(5) val times: Long = 0L,
-        @ProtoId(6) val historyTimes: Long = 0L,
-        @ProtoId(7) val bgUrl: String = "",
-        @ProtoId(8) val url: String = "",
-        @ProtoId(9) val extraInfo: String = ""
+    internal class HotTopic(
+        @ProtoNumber(1) @JvmField val id: Long = 0L,
+        @ProtoNumber(2) @JvmField val title: String = "",
+        @ProtoNumber(3) @JvmField val topicType: Long = 0L,
+        @ProtoNumber(4) @JvmField val total: Long = 0L,
+        @ProtoNumber(5) @JvmField val times: Long = 0L,
+        @ProtoNumber(6) @JvmField val historyTimes: Long = 0L,
+        @ProtoNumber(7) @JvmField val bgUrl: String = "",
+        @ProtoNumber(8) @JvmField val url: String = "",
+        @ProtoNumber(9) @JvmField val extraInfo: String = ""
     ) : ProtoBuf
 
     @Serializable
-    class DateEvent(
-        @ProtoId(1) val eventId: Long = 0L,
-        @ProtoId(2) val time: Int = 0,
-        @ProtoId(3) val type: Int = 0,
-        @ProtoId(4) val msgUserInfo: AppointDefine.StrangerInfo? = null,
-        @ProtoId(5) val msgDateInfo: AppointDefine.AppointInfo? = null,
-        @ProtoId(6) val attendIdx: Int = 0,
-        @ProtoId(7) val eventTips: String = "",
-        @ProtoId(8) val msgComment: AppointDefine.DateComment? = null,
-        @ProtoId(9) val cancelEventId: Long = 0L
+    internal class DateEvent(
+        @ProtoNumber(1) @JvmField val eventId: Long = 0L,
+        @ProtoNumber(2) @JvmField val time: Int = 0,
+        @ProtoNumber(3) @JvmField val type: Int = 0,
+        @ProtoNumber(4) @JvmField val msgUserInfo: StrangerInfo? = null,
+        @ProtoNumber(5) @JvmField val msgDateInfo: AppointInfo? = null,
+        @ProtoNumber(6) @JvmField val attendIdx: Int = 0,
+        @ProtoNumber(7) @JvmField val eventTips: String = "",
+        @ProtoNumber(8) @JvmField val msgComment: DateComment? = null,
+        @ProtoNumber(9) @JvmField val cancelEventId: Long = 0L
     ) : ProtoBuf
 
     @Serializable
-    class AppointInfo(
-        @ProtoId(1) val msgAppointId: AppointDefine.AppointID? = null,
-        @ProtoId(2) val msgAppointment: AppointDefine.AppointContent? = null,
-        @ProtoId(3) val appointStatus: Int = 0,
-        @ProtoId(4) val joinWording: String = "",
-        @ProtoId(5) val viewWording: String = "",
-        @ProtoId(6) val unreadCount: Int = 0,
-        @ProtoId(7) val owner: Int = 0,
-        @ProtoId(8) val join: Int = 0,
-        @ProtoId(9) val view: Int = 0,
-        @ProtoId(10) val commentWording: String = "",
-        @ProtoId(11) val commentNum: Int = 0,
-        @ProtoId(12) val attendStatus: Int = 0,
-        @ProtoId(13) val msgAppointmentEx: AppointDefine.AppointInfoEx? = null
+    internal class AppointInfo(
+        @ProtoNumber(1) @JvmField val msgAppointId: AppointID? = null,
+        @ProtoNumber(2) @JvmField val msgAppointment: AppointContent? = null,
+        @ProtoNumber(3) @JvmField val appointStatus: Int = 0,
+        @ProtoNumber(4) @JvmField val joinWording: String = "",
+        @ProtoNumber(5) @JvmField val viewWording: String = "",
+        @ProtoNumber(6) @JvmField val unreadCount: Int = 0,
+        @ProtoNumber(7) @JvmField val owner: Int = 0,
+        @ProtoNumber(8) @JvmField val join: Int = 0,
+        @ProtoNumber(9) @JvmField val view: Int = 0,
+        @ProtoNumber(10) @JvmField val commentWording: String = "",
+        @ProtoNumber(11) @JvmField val commentNum: Int = 0,
+        @ProtoNumber(12) @JvmField val attendStatus: Int = 0,
+        @ProtoNumber(13) @JvmField val msgAppointmentEx: AppointInfoEx? = null
     ) : ProtoBuf
 
     @Serializable
-    class UserInfo(
-        @ProtoId(1) val uin: Long = 0L,
-        @ProtoId(2) val nickname: ByteArray = EMPTY_BYTE_ARRAY,
-        @ProtoId(3) val age: Int = 0,
-        @ProtoId(4) val gender: Int = 0,
-        @ProtoId(5) val avatar: ByteArray = EMPTY_BYTE_ARRAY
+    internal class UserInfo(
+        @ProtoNumber(1) @JvmField val uin: Long = 0L,
+        @ProtoNumber(2) @JvmField val nickname: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(3) @JvmField val age: Int = 0,
+        @ProtoNumber(4) @JvmField val gender: Int = 0,
+        @ProtoNumber(5) @JvmField val avatar: ByteArray = EMPTY_BYTE_ARRAY
     ) : ProtoBuf
 
     @Serializable
-    class ReplyInfo(
-        @ProtoId(1) val commentId: String = "",
-        @ProtoId(2) val msgStrangerInfo: AppointDefine.StrangerInfo? = null
+    internal class ReplyInfo(
+        @ProtoNumber(1) @JvmField val commentId: String = "",
+        @ProtoNumber(2) @JvmField val msgStrangerInfo: StrangerInfo? = null
     ) : ProtoBuf
 }

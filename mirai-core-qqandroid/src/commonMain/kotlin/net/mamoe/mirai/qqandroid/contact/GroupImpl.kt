@@ -1,19 +1,20 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
 
-@file:Suppress("INAPPLICABLE_JVM_NAME")
-@file:OptIn(MiraiInternalAPI::class, LowLevelAPI::class)
+@file:Suppress("INAPPLICABLE_JVM_NAME", "DEPRECATION_ERROR", "INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+@file:OptIn(LowLevelAPI::class)
 
 package net.mamoe.mirai.qqandroid.contact
 
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.core.Closeable
 import net.mamoe.mirai.LowLevelAPI
 import net.mamoe.mirai.contact.*
@@ -21,7 +22,6 @@ import net.mamoe.mirai.data.GroupInfo
 import net.mamoe.mirai.data.MemberInfo
 import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.*
-import net.mamoe.mirai.event.events.MessageSendEvent.GroupMessageSendEvent
 import net.mamoe.mirai.message.MessageReceipt
 import net.mamoe.mirai.message.data.*
 import net.mamoe.mirai.qqandroid.QQAndroidBot
@@ -31,16 +31,20 @@ import net.mamoe.mirai.qqandroid.message.firstIsInstanceOrNull
 import net.mamoe.mirai.qqandroid.network.highway.HighwayHelper
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.TroopManagement
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.image.ImgStore
-import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.MessageSvc
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.MessageSvcPbSendMsg
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.createToGroup
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.voice.PttStore
+import net.mamoe.mirai.qqandroid.network.protocol.packet.list.ProfileService
+import net.mamoe.mirai.qqandroid.utils.MiraiPlatformUtils
 import net.mamoe.mirai.qqandroid.utils.estimateLength
-import net.mamoe.mirai.qqandroid.utils.toIpV4AddressString
+import net.mamoe.mirai.qqandroid.utils.toUHexString
 import net.mamoe.mirai.utils.*
-import kotlin.contracts.ExperimentalContracts
+import java.io.InputStream
 import kotlin.contracts.contract
 import kotlin.coroutines.CoroutineContext
 import kotlin.jvm.JvmSynthetic
+import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalContracts::class)
 internal fun GroupImpl.Companion.checkIsInstance(instance: Group) {
     contract {
         returns() implies (instance is GroupImpl)
@@ -48,7 +52,6 @@ internal fun GroupImpl.Companion.checkIsInstance(instance: Group) {
     check(instance is GroupImpl) { "group is not an instanceof GroupImpl!! DO NOT interlace two or more protocol implementations!!" }
 }
 
-@OptIn(ExperimentalContracts::class)
 internal fun Group.checkIsGroupImpl() {
     contract {
         returns() implies (this@checkIsGroupImpl is GroupImpl)
@@ -58,53 +61,32 @@ internal fun Group.checkIsGroupImpl() {
 
 @Suppress("PropertyName")
 internal class GroupImpl(
-    bot: QQAndroidBot, override val coroutineContext: CoroutineContext,
+    bot: QQAndroidBot,
+    coroutineContext: CoroutineContext,
     override val id: Long,
     groupInfo: GroupInfo,
     members: Sequence<MemberInfo>
 ) : Group() {
     companion object;
 
+    override val coroutineContext: CoroutineContext = coroutineContext + SupervisorJob(coroutineContext[Job])
+
     override val bot: QQAndroidBot by bot.unsafeWeakRef()
 
-    @OptIn(LowLevelAPI::class)
     val uin: Long = groupInfo.uin
 
     override lateinit var owner: Member
 
-    @OptIn(MiraiExperimentalAPI::class)
-    override val botAsMember: Member by lazy {
-        newMember(object : MemberInfo {
-            override val nameCard: String
-                get() = bot.nick // TODO: 2020/2/21 机器人在群内的昵称获取
-            override val permission: MemberPermission
-                get() = botPermission
-            override val specialTitle: String
-                get() = "" // TODO: 2020/2/21 获取机器人在群里的头衔
-            override val muteTimestamp: Int
-                get() = botMuteRemaining
-            override val uin: Long
-                get() = bot.id
-            override val nick: String
-                get() = bot.nick
-        })
-    }
+    override lateinit var botAsMember: Member
 
-    @OptIn(MiraiExperimentalAPI::class)
-    override lateinit var botPermission: MemberPermission
+    override val botPermission: MemberPermission get() = botAsMember.permission
 
-    var _botMuteTimestamp: Int = groupInfo.botMuteRemaining
-
-    override val botMuteRemaining: Int =
-        if (_botMuteTimestamp == 0 || _botMuteTimestamp == 0xFFFFFFFF.toInt()) {
-            0
-        } else {
-            _botMuteTimestamp - currentTimeSeconds.toInt() - bot.client.timeDifference.toInt()
-        }
+    // e.g. 600
+    override val botMuteRemaining: Int get() = botAsMember.muteTimeRemaining
 
     override val members: ContactList<Member> = ContactList(members.mapNotNull {
         if (it.uin == bot.id) {
-            botPermission = it.permission
+            botAsMember = newMember(it)
             if (it.permission == MemberPermission.OWNER) {
                 owner = botAsMember
             }
@@ -127,7 +109,8 @@ internal class GroupImpl(
     override var name: String
         get() = _name
         set(newValue) {
-            checkBotPermissionOperator()
+
+            checkBotPermission(MemberPermission.ADMINISTRATOR)
             if (_name != newValue) {
                 val oldValue = _name
                 _name = newValue
@@ -139,7 +122,7 @@ internal class GroupImpl(
                             newName = newValue
                         ).sendWithoutExpect()
                     }
-                    GroupNameChangeEvent(oldValue, newValue, this@GroupImpl, true).broadcast()
+                    GroupNameChangeEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
                 }
             }
         }
@@ -149,42 +132,42 @@ internal class GroupImpl(
         override var entranceAnnouncement: String
             get() = _announcement
             set(newValue) {
-                checkBotPermissionOperator()
-                if (_announcement != newValue) {
-                    val oldValue = _announcement
-                    _announcement = newValue
-                    launch {
-                        bot.network.run {
-                            TroopManagement.GroupOperation.memo(
-                                client = bot.client,
-                                groupCode = id,
-                                newMemo = newValue
-                            ).sendWithoutExpect()
-                        }
-                        GroupEntranceAnnouncementChangeEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
+                checkBotPermission(MemberPermission.ADMINISTRATOR)
+                //if (_announcement != newValue) {
+                val oldValue = _announcement
+                _announcement = newValue
+                launch {
+                    bot.network.run {
+                        TroopManagement.GroupOperation.memo(
+                            client = bot.client,
+                            groupCode = id,
+                            newMemo = newValue
+                        ).sendWithoutExpect()
                     }
+                    GroupEntranceAnnouncementChangeEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
                 }
+                //}
             }
 
 
         override var isAllowMemberInvite: Boolean
             get() = _allowMemberInvite
             set(newValue) {
-                checkBotPermissionOperator()
-                if (_allowMemberInvite != newValue) {
-                    val oldValue = _allowMemberInvite
-                    _allowMemberInvite = newValue
-                    launch {
-                        bot.network.run {
-                            TroopManagement.GroupOperation.allowMemberInvite(
-                                client = bot.client,
-                                groupCode = id,
-                                switch = newValue
-                            ).sendWithoutExpect()
-                        }
-                        GroupAllowMemberInviteEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
+                checkBotPermission(MemberPermission.ADMINISTRATOR)
+                //if (_allowMemberInvite != newValue) {
+                val oldValue = _allowMemberInvite
+                _allowMemberInvite = newValue
+                launch {
+                    bot.network.run {
+                        TroopManagement.GroupOperation.allowMemberInvite(
+                            client = bot.client,
+                            groupCode = id,
+                            switch = newValue
+                        ).sendWithoutExpect()
                     }
+                    GroupAllowMemberInviteEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
                 }
+                //}
             }
 
         override var isAutoApproveEnabled: Boolean
@@ -201,138 +184,228 @@ internal class GroupImpl(
                 TODO()
             }
 
+        @Suppress("OverridingDeprecatedMember")
         override var isConfessTalkEnabled: Boolean
             get() = _confessTalk
             set(newValue) {
-                checkBotPermissionOperator()
-                if (_confessTalk != newValue) {
-                    val oldValue = _confessTalk
-                    _confessTalk = newValue
-                    launch {
-                        bot.network.run {
-                            TroopManagement.GroupOperation.confessTalk(
-                                client = bot.client,
-                                groupCode = id,
-                                switch = newValue
-                            ).sendWithoutExpect()
-                        }
-                        GroupAllowConfessTalkEvent(oldValue, newValue, this@GroupImpl, true).broadcast()
+
+                checkBotPermission(MemberPermission.ADMINISTRATOR)
+                //if (_confessTalk != newValue) {
+                val oldValue = _confessTalk
+                _confessTalk = newValue
+                launch {
+                    bot.network.run {
+                        TroopManagement.GroupOperation.confessTalk(
+                            client = bot.client,
+                            groupCode = id,
+                            switch = newValue
+                        ).sendWithoutExpect()
                     }
+                    GroupAllowConfessTalkEvent(oldValue, newValue, this@GroupImpl, true).broadcast()
                 }
+                // }
             }
 
 
         override var isMuteAll: Boolean
             get() = _muteAll
             set(newValue) {
-                checkBotPermissionOperator()
-                if (_muteAll != newValue) {
-                    val oldValue = _muteAll
-                    _muteAll = newValue
-                    launch {
-                        bot.network.run {
-                            TroopManagement.GroupOperation.muteAll(
-                                client = bot.client,
-                                groupCode = id,
-                                switch = newValue
-                            ).sendWithoutExpect()
-                        }
-                        GroupMuteAllEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
+                checkBotPermission(MemberPermission.ADMINISTRATOR)
+                //if (_muteAll != newValue) {
+                val oldValue = _muteAll
+                _muteAll = newValue
+                launch {
+                    bot.network.run {
+                        TroopManagement.GroupOperation.muteAll(
+                            client = bot.client,
+                            groupCode = id,
+                            switch = newValue
+                        ).sendWithoutExpect()
                     }
+                    GroupMuteAllEvent(oldValue, newValue, this@GroupImpl, null).broadcast()
                 }
+                //}
             }
     }
 
-    @MiraiExperimentalAPI
     override suspend fun quit(): Boolean {
         check(botPermission != MemberPermission.OWNER) { "An owner cannot quit from a owning group" }
-        TODO("not implemented")
+
+        if (!bot.groups.delegate.remove(this)) {
+            return false
+        }
+        bot.network.run {
+            val response: ProfileService.GroupMngReq.GroupMngReqResponse = ProfileService.GroupMngReq(
+                bot.client,
+                this@GroupImpl.id
+            ).sendAndExpect()
+            check(response.errorCode == 0) {
+                "Group.quit failed: $response".also {
+                    bot.groups.delegate.addLast(this@GroupImpl)
+                }
+            }
+        }
+        BotLeaveEvent.Active(this).broadcast()
+        return true
     }
 
-    @OptIn(MiraiExperimentalAPI::class)
     override fun newMember(memberInfo: MemberInfo): Member {
         return MemberImpl(
-            @OptIn(LowLevelAPI::class)
-            bot._lowLevelNewQQ(memberInfo) as QQImpl,
+            bot._lowLevelNewFriend(memberInfo) as FriendImpl,
             this,
             this.coroutineContext,
             memberInfo
         )
     }
 
+    internal fun newAnonymous(name: String): Member = newMember(
+        object : MemberInfo {
+            override val nameCard = name
+            override val permission = MemberPermission.MEMBER
+            override val specialTitle = "匿名"
+            override val muteTimestamp = 0
+            override val uin = 80000000L
+            override val nick = name
+        }
+    )
 
     override operator fun get(id: Long): Member {
+        if (id == bot.id) {
+            return botAsMember
+        }
         return members.firstOrNull { it.id == id }
             ?: throw NoSuchElementException("member $id not found in group $uin")
     }
 
     override fun contains(id: Long): Boolean {
-        return members.firstOrNull { it.id == id } != null
+        return bot.id == id || members.firstOrNull { it.id == id } != null
     }
 
     override fun getOrNull(id: Long): Member? {
+        if (id == bot.id) {
+            return botAsMember
+        }
         return members.firstOrNull { it.id == id }
     }
 
-    @OptIn(MiraiExperimentalAPI::class, LowLevelAPI::class)
     @JvmSynthetic
     override suspend fun sendMessage(message: Message): MessageReceipt<Group> {
+        require(message.isContentNotEmpty()) { "message is empty" }
         check(!isBotMuted) { throw BotIsBeingMutedException(this) }
 
-        val msg: MessageChain
+        return sendMessageImpl(message, false).also {
+            logMessageSent(message)
+        }
+    }
 
-        if (message !is LongMessage) {
-            val event = GroupMessageSendEvent(this, message.asMessageChain()).broadcast()
-            if (event.isCancelled) {
-                throw EventCancelledException("cancelled by GroupMessageSendEvent")
+    private suspend fun sendMessageImpl(message: Message, isForward: Boolean): MessageReceipt<Group> {
+        if (message is MessageChain) {
+            if (message.anyIsInstance<ForwardMessage>()) {
+                return sendMessageImpl(message.singleOrNull() ?: error("ForwardMessage must be standalone"), true)
             }
-
-            val length = event.message.estimateLength(703) // 阈值为700左右，限制到3的倍数
-            var imageCnt = 0 // 通过下方逻辑短路延迟计算
-
-            if (length > 5000 || event.message.count { it is Image }.apply { imageCnt = this } > 50) {
+        }
+        if (message is ForwardMessage) {
+            check(message.nodeList.size < 200) {
                 throw MessageTooLargeException(
-                    this,
-                    message,
-                    event.message,
-                    "message(${event.message.joinToString(
-                        "",
-                        limit = 10
-                    )}) is too large. Allow up to 50 images or 5000 chars"
+                    this, message, message,
+                    "ForwardMessage allows up to 200 nodes, but found ${message.nodeList.size}"
                 )
             }
 
-            if (length > 702 || imageCnt > 2)
-                return bot.lowLevelSendLongGroupMessage(this.id, event.message)
-
-            msg = event.message
-        } else msg = message.asMessageChain()
-        msg.firstIsInstanceOrNull<QuoteReply>()?.source?.ensureSequenceIdAvailable()
-
-        lateinit var source: MessageSourceToGroupImpl
-        bot.network.run {
-            val response: MessageSvc.PbSendMsg.Response = MessageSvc.PbSendMsg.createToGroup(
-                bot.client,
-                this@GroupImpl,
-                msg
-            ) {
-                source = it
-                source.startWaitingSequenceId(this)
-            }.sendAndExpect()
-            if (response is MessageSvc.PbSendMsg.Response.Failed) {
-                when (response.resultType) {
-                    120 -> error("bot is being muted.")
-                    34 -> error("internal error: send message failed, illegal arguments: $response")
-                    else -> error("send message failed: $response")
-                }
-            }
+            return bot.lowLevelSendGroupLongOrForwardMessage(this.id, message.nodeList, false, message)
         }
 
-        return MessageReceipt(source, this, botAsMember)
+        val msg: MessageChain = if (message !is LongMessage && message !is ForwardMessageInternal) {
+            val chain = kotlin.runCatching {
+                GroupMessagePreSendEvent(this, message).broadcast()
+            }.onSuccess {
+                check(!it.isCancelled) {
+                    throw EventCancelledException("cancelled by GroupMessagePreSendEvent")
+                }
+            }.getOrElse {
+                throw EventCancelledException("exception thrown when broadcasting GroupMessagePreSendEvent", it)
+            }.message.asMessageChain()
+
+            val length = chain.estimateLength(703) // 阈值为700左右，限制到3的倍数
+            var imageCnt = 0 // 通过下方逻辑短路延迟计算
+
+            if (length > 5000 || chain.count { it is Image }.apply { imageCnt = this } > 50) {
+                throw MessageTooLargeException(
+                    this, message, chain,
+                    "message(${chain.joinToString("", limit = 10)}) is too large. Allow up to 50 images or 5000 chars"
+                )
+            }
+
+            if (length > 702 || imageCnt > 2) {
+                return bot.lowLevelSendGroupLongOrForwardMessage(
+                    this.id,
+                    listOf(
+                        ForwardMessage.Node(
+                            senderId = bot.id,
+                            time = currentTimeSeconds.toInt(),
+                            message = chain,
+                            senderName = bot.nick
+                        )
+                    ),
+                    true, null
+                )
+            }
+            chain
+        } else message.asMessageChain()
+
+        msg.firstIsInstanceOrNull<QuoteReply>()?.source?.ensureSequenceIdAvailable()
+
+
+        val result = bot.network.runCatching {
+            val source: MessageSourceToGroupImpl
+            MessageSvcPbSendMsg.createToGroup(
+                bot.client,
+                this@GroupImpl,
+                msg,
+                isForward
+            ) {
+                source = it
+            }.sendAndExpect<MessageSvcPbSendMsg.Response>().let {
+                check(it is MessageSvcPbSendMsg.Response.SUCCESS) {
+                    "Send group message failed: $it"
+                }
+            }
+
+            try {
+                source.ensureSequenceIdAvailable()
+            } catch (e: Exception) {
+                bot.network.logger.warning {
+                    "Timeout awaiting sequenceId for group message(${
+                        message.contentToString()
+                            .take(10)
+                    }). Some features may not work properly"
+                }
+                bot.network.logger.warning(e)
+            }
+
+            MessageReceipt(source, this@GroupImpl, botAsMember)
+        }
+
+        result.fold(
+            onSuccess = {
+                GroupMessagePostSendEvent(this, msg, null, it)
+            },
+            onFailure = {
+                GroupMessagePostSendEvent(this, msg, it, null)
+            }
+        ).broadcast()
+
+        return result.getOrThrow()
     }
 
+    @Suppress("DEPRECATION")
+    @OptIn(ExperimentalTime::class)
     @JvmSynthetic
     override suspend fun uploadImage(image: ExternalImage): OfflineGroupImage = try {
+        @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+        if (image.input is net.mamoe.mirai.utils.internal.DeferredReusableInput) {
+            image.input.init(bot.configuration.fileCacheStrategy)
+        }
         if (BeforeImageUploadEvent(this, image).broadcast().isCancelled) {
             throw EventCancelledException("cancelled by BeforeImageUploadEvent.ToGroup")
         }
@@ -342,11 +415,7 @@ internal class GroupImpl(
                 uin = bot.id,
                 groupCode = id,
                 md5 = image.md5,
-                size = image.inputSize,
-                picWidth = image.width,
-                picHeight = image.height,
-                picType = image.imageType,
-                filename = image.filename
+                size = image.input.size.toInt()
             ).sendAndExpect()
 
             @Suppress("UNCHECKED_CAST") // bug
@@ -358,67 +427,21 @@ internal class GroupImpl(
                 }
                 is ImgStore.GroupPicUp.Response.FileExists -> {
                     val resourceId = image.calculateImageResourceId()
-//                    return NotOnlineImageFromFile(
-//                        resourceId = resourceId,
-//                        md5 = response.fileInfo.fileMd5,
-//                        filepath = resourceId,
-//                        fileLength = response.fileInfo.fileSize.toInt(),
-//                        height = response.fileInfo.fileHeight,
-//                        width = response.fileInfo.fileWidth,
-//                        imageType = response.fileInfo.fileType,
-//                        fileId = response.fileId.toInt()
-//                    )
-                    //  println("NMSL")
-                    return OfflineGroupImage(
-                        md5 = image.md5,
-                        filepath = resourceId
-                    ).also { ImageUploadEvent.Succeed(this@GroupImpl, image, it).broadcast() }
+                    return OfflineGroupImage(imageId = resourceId)
+                        .also { ImageUploadEvent.Succeed(this@GroupImpl, image, it).broadcast() }
                 }
                 is ImgStore.GroupPicUp.Response.RequireUpload -> {
-                    // 每 10KB 等 1 秒
-                    withTimeoutOrNull(image.inputSize * 1000 / 1024 / 10) {
-                        HighwayHelper.uploadImage(
-                            client = bot.client,
-                            serverIp = response.uploadIpList.first().toIpV4AddressString(),
-                            serverPort = response.uploadPortList.first(),
-                            imageInput = image.input,
-                            inputSize = image.inputSize.toInt(),
-                            fileMd5 = image.md5,
-                            ticket = response.uKey,
-                            commandId = 2
-                        )
-                    } ?: error("timeout uploading image: ${image.filename}")
+                    HighwayHelper.uploadImageToServers(
+                        bot,
+                        response.uploadIpList.zip(response.uploadPortList),
+                        response.uKey,
+                        image.input,
+                        kind = "group image",
+                        commandId = 2
+                    )
                     val resourceId = image.calculateImageResourceId()
-                    // return NotOnlineImageFromFile(
-                    //     resourceId = resourceId,
-                    //     md5 = image.md5,
-                    //     filepath = resourceId,
-                    //     fileLength = image.inputSize.toInt(),
-                    //     height = image.height,
-                    //     width = image.width,
-                    //     imageType = image.imageType,
-                    //     fileId = response.fileId.toInt()
-                    // )
-                    return OfflineGroupImage(
-                        md5 = image.md5,
-                        filepath = resourceId
-                    ).also { ImageUploadEvent.Succeed(this@GroupImpl, image, it).broadcast() }
-                    /*
-                        fileId = response.fileId.toInt(),
-                        fileType = 0, // ?
-                        height = image.height,
-                        width = image.width,
-                        imageType = image.imageType,
-                        bizType = 0,
-                        serverIp = response.uploadIpList.first(),
-                        serverPort = response.uploadPortList.first(),
-                        signature = image.md5,
-                        size = image.inputSize.toInt(),
-                        useful = 1,
-                        source = 200,
-                        original = 1,
-                        pbReserve = EMPTY_BYTE_ARRAY
-                     */
+                    return OfflineGroupImage(imageId = resourceId)
+                        .also { ImageUploadEvent.Succeed(this@GroupImpl, image, it).broadcast() }
                 }
             }
         }
@@ -426,23 +449,45 @@ internal class GroupImpl(
         (image.input as? Closeable)?.close()
     }
 
-    override fun toString(): String {
-        return "Group($id)"
+    /**
+     * 上传一个语音消息以备发送.
+     * 请注意，这是一个实验性api且随时会被删除
+     * @throws EventCancelledException 当发送消息事件被取消
+     * @throws OverFileSizeMaxException 当语音文件过大而被服务器拒绝上传时. (最大大小约为 1 MB)
+     */
+    @MiraiExperimentalAPI
+    @SinceMirai("1.2.0")
+    override suspend fun uploadVoice(input: InputStream): Voice {
+        val content = ByteArray(input.available())
+        input.read(content)
+        if (content.size > 1048576) {
+            throw  OverFileSizeMaxException()
+        }
+        val md5 = MiraiPlatformUtils.md5(content)
+        val codec = with(content.copyOfRange(0, 10).toUHexString("")) {
+            when {
+                startsWith("2321414D52") -> 0             // amr
+                startsWith("02232153494C4B5F5633") -> 1  // silk V3
+                else -> 0                               // use amr by default
+            }
+        }
+        return bot.network.run {
+            val response: PttStore.GroupPttUp.Response.RequireUpload =
+                PttStore.GroupPttUp(bot.client, bot.id, id, md5, content.size.toLong(), codec).sendAndExpect()
+            HighwayHelper.uploadPttToServers(
+                bot,
+                response.uploadIpList.zip(response.uploadPortList),
+                content,
+                md5,
+                response.uKey,
+                response.fileKey,
+                codec
+            )
+            Voice("${md5.toUHexString("")}.amr", md5, content.size.toLong(), "")
+        }
+
     }
 
-    override fun hashCode(): Int {
-        var result = bot.hashCode()
-        result = 31 * result + id.hashCode()
-        return result
-    }
 
-    override fun equals(other: Any?): Boolean {
-        @Suppress("DuplicatedCode", "DuplicatedCode")
-        if (this === other) return true
-        if (other !is Contact) return false
-        if (this::class != other::class) return false
-        return this.id == other.id && this.bot == other.bot
-    }
-
-
+    override fun toString(): String = "Group($id)"
 }

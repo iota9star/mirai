@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -11,12 +11,16 @@
 
 package net.mamoe.mirai.qqandroid.network
 
+import kotlinx.atomicfu.AtomicBoolean
 import kotlinx.atomicfu.AtomicInt
 import kotlinx.atomicfu.atomic
 import kotlinx.io.core.*
 import net.mamoe.mirai.data.OnlineStatus
+import net.mamoe.mirai.network.LoginFailedException
+import net.mamoe.mirai.network.NoServerAvailableException
 import net.mamoe.mirai.qqandroid.BotAccount
 import net.mamoe.mirai.qqandroid.QQAndroidBot
+import net.mamoe.mirai.qqandroid.network.protocol.data.jce.FileStoragePushFSSvcListFuckKotlin
 import net.mamoe.mirai.qqandroid.network.protocol.packet.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.qqandroid.network.protocol.packet.PacketLogger
 import net.mamoe.mirai.qqandroid.network.protocol.packet.Tlv
@@ -24,8 +28,8 @@ import net.mamoe.mirai.qqandroid.utils.*
 import net.mamoe.mirai.qqandroid.utils.cryptor.ECDH
 import net.mamoe.mirai.qqandroid.utils.cryptor.TEA
 import net.mamoe.mirai.utils.*
+import kotlin.jvm.Volatile
 import kotlin.random.Random
-import kotlin.random.nextInt
 
 internal val DeviceInfo.guid: ByteArray get() = generateGuid(androidId, macAddress)
 
@@ -33,14 +37,24 @@ internal val DeviceInfo.guid: ByteArray get() = generateGuid(androidId, macAddre
  * Defaults "%4;7t>;28<fc.5*6".toByteArray()
  */
 @Suppress("RemoveRedundantQualifierName") // bug
-@OptIn(MiraiInternalAPI::class)
 private fun generateGuid(androidId: ByteArray, macAddress: ByteArray): ByteArray =
     net.mamoe.mirai.qqandroid.utils.MiraiPlatformUtils.md5(androidId + macAddress)
 
 /**
  * 生成长度为 [length], 元素为随机 `0..255` 的 [ByteArray]
  */
-internal fun getRandomByteArray(length: Int): ByteArray = ByteArray(length) { Random.nextInt(0..255).toByte() }
+internal fun getRandomByteArray(length: Int): ByteArray = ByteArray(length) { Random.nextInt(0, 255).toByte() }
+
+internal object DefaultServerList : Set<Pair<String, Int>> by setOf(
+    "msfwifi.3g.qq.com" to 8080,
+    "42.81.169.46" to 8080,
+    "42.81.172.81" to 80,
+    "114.221.148.59" to 14000,
+    "42.81.172.147" to 443,
+    "125.94.60.146" to 80,
+    "114.221.144.215" to 80,
+    "42.81.172.22" to 80
+)
 
 /*
  APP ID:
@@ -55,7 +69,6 @@ internal fun getRandomByteArray(length: Int): ByteArray = ByteArray(length) { Ra
  DOMAINS
  Pskey: "openmobile.qq.com"
  */
-@OptIn(MiraiExperimentalAPI::class, MiraiInternalAPI::class)
 @PublishedApi
 internal open class QQAndroidClient(
     context: Context,
@@ -64,6 +77,12 @@ internal open class QQAndroidClient(
     val device: DeviceInfo = SystemDeviceInfo(context),
     bot: QQAndroidBot
 ) {
+    @Suppress("INVISIBLE_MEMBER")
+    val subAppId: Long
+        get() = bot.configuration.protocol.id
+
+    internal val serverList: MutableList<Pair<String, Int>> = DefaultServerList.toMutableList()
+
     val keys: Map<String, ByteArray> by lazy {
         mapOf(
             "16 zero" to ByteArray(16),
@@ -102,10 +121,38 @@ internal open class QQAndroidClient(
     val randomKey: ByteArray = getRandomByteArray(16)
 
     var miscBitMap: Int = 184024956 // 也可能是 150470524 ?
-    var mainSigMap: Int = 16724722
+    private var mainSigMap: Int = 16724722
     var subSigMap: Int = 0x10400 //=66,560
 
     private val _ssoSequenceId: AtomicInt = atomic(85600)
+
+    lateinit var fileStoragePushFSSvcList: FileStoragePushFSSvcListFuckKotlin
+
+    internal suspend inline fun useNextServers(crossinline block: suspend (host: String, port: Int) -> Unit) {
+        if (bot.client.serverList.isEmpty()) {
+            throw NoServerAvailableException(null)
+        }
+        retryCatching(bot.client.serverList.size, except = LoginFailedException::class) {
+            val pair = bot.client.serverList[0]
+            kotlin.runCatching {
+                block(pair.first, pair.second)
+                return@retryCatching
+            }.getOrElse {
+                bot.client.serverList.remove(pair)
+                if (it !is LoginFailedException) {
+                    // 不要重复打印.
+                    bot.logger.warning(it)
+                }
+                throw it
+            }
+        }.getOrElse {
+            if (it is LoginFailedException) {
+                throw it
+            }
+            bot.client.serverList.addAll(DefaultServerList)
+            throw NoServerAvailableException(it)
+        }
+    }
 
     @MiraiInternalAPI("Do not use directly. Get from the lambda param of buildSsoPacket")
     internal fun nextSsoSequenceId() = _ssoSequenceId.addAndGet(2)
@@ -117,6 +164,20 @@ internal open class QQAndroidClient(
 
     private val messageSequenceId: AtomicInt = atomic(22911)
     internal fun atomicNextMessageSequenceId(): Int = messageSequenceId.getAndAdd(2)
+
+
+    private val friendSeq: AtomicInt = atomic(22911)
+    internal fun getFriendSeq(): Int {
+        return friendSeq.value
+    }
+
+    internal fun nextFriendSeq(): Int {
+        return friendSeq.incrementAndGet()
+    }
+
+    internal fun setFriendSeq(compare: Int, id: Int): Boolean {
+        return friendSeq.compareAndSet(compare, id % 65535)
+    }
 
     private val requestPacketRequestId: AtomicInt = atomic(1921334513)
     internal fun nextRequestPacketRequestId(): Int = requestPacketRequestId.getAndAdd(2)
@@ -130,6 +191,9 @@ internal open class QQAndroidClient(
     private val highwayDataTransSequenceIdForApplyUp: AtomicInt = atomic(77918)
     internal fun nextHighwayDataTransSequenceIdForApplyUp(): Int = highwayDataTransSequenceIdForApplyUp.getAndAdd(2)
 
+    internal val onlinePushCacheList: AtomicResizeCacheList<Short> = AtomicResizeCacheList(20.secondsToMillis)
+    internal val pbPushTransMsgCacheList: AtomicResizeCacheList<Int> = AtomicResizeCacheList(20.secondsToMillis)
+
     val appClientVersion: Int = 0
 
     var networkType: NetworkType = NetworkType.WIFI
@@ -142,6 +206,9 @@ internal open class QQAndroidClient(
     val protocolVersion: Short = 8001
 
     class C2cMessageSyncData {
+        val firstNotify: AtomicBoolean = atomic(true)
+
+        @Volatile
         var syncCookie: ByteArray? = null
         var pubAccountCookie = EMPTY_BYTE_ARRAY
         var msgCtrlBuf: ByteArray = EMPTY_BYTE_ARRAY
@@ -209,7 +276,6 @@ internal open class QQAndroidClient(
 }
 
 @Suppress("RemoveRedundantQualifierName") // bug
-@OptIn(MiraiInternalAPI::class)
 internal fun generateTgtgtKey(guid: ByteArray): ByteArray =
     net.mamoe.mirai.qqandroid.utils.MiraiPlatformUtils.md5(getRandomByteArray(16) + guid)
 
@@ -311,7 +377,7 @@ internal class WLoginSigInfo(
     val deviceToken: ByteArray
 ) {
     override fun toString(): String {
-        return "WLoginSigInfo(uin=$uin, encryptA1=${encryptA1?.toUHexString()}, noPicSig=${noPicSig?.toUHexString()}, G=${G.toUHexString()}, dpwd=${dpwd.toUHexString()}, randSeed=${randSeed.toUHexString()}, simpleInfo=$simpleInfo, appPri=$appPri, a2ExpiryTime=$a2ExpiryTime, loginBitmap=$loginBitmap, tgt=${tgt.toUHexString()}, a2CreationTime=$a2CreationTime, tgtKey=${tgtKey.toUHexString()}, userStSig=$userStSig, userStKey=${userStKey.toUHexString()}, userStWebSig=$userStWebSig, userA5=$userA5, userA8=$userA8, lsKey=$lsKey, sKey=$sKey, userSig64=$userSig64, openId=${openId.toUHexString()}, openKey=$openKey, vKey=$vKey, accessToken=$accessToken, d2=$d2, d2Key=${d2Key.toUHexString()}, sid=$sid, aqSig=$aqSig, psKey=${psKeyMap.toString()}, superKey=${superKey.toUHexString()}, payToken=${payToken.toUHexString()}, pf=${pf.toUHexString()}, pfKey=${pfKey.toUHexString()}, da2=${da2.toUHexString()}, wtSessionTicket=$wtSessionTicket, wtSessionTicketKey=${wtSessionTicketKey.toUHexString()}, deviceToken=${deviceToken.toUHexString()})"
+        return "WLoginSigInfo(uin=$uin, encryptA1=${encryptA1?.toUHexString()}, noPicSig=${noPicSig?.toUHexString()}, G=${G.toUHexString()}, dpwd=${dpwd.toUHexString()}, randSeed=${randSeed.toUHexString()}, simpleInfo=$simpleInfo, appPri=$appPri, a2ExpiryTime=$a2ExpiryTime, loginBitmap=$loginBitmap, tgt=${tgt.toUHexString()}, a2CreationTime=$a2CreationTime, tgtKey=${tgtKey.toUHexString()}, userStSig=$userStSig, userStKey=${userStKey.toUHexString()}, userStWebSig=$userStWebSig, userA5=$userA5, userA8=$userA8, lsKey=$lsKey, sKey=$sKey, userSig64=$userSig64, openId=${openId.toUHexString()}, openKey=$openKey, vKey=$vKey, accessToken=$accessToken, d2=$d2, d2Key=${d2Key.toUHexString()}, sid=$sid, aqSig=$aqSig, psKey=$psKeyMap, superKey=${superKey.toUHexString()}, payToken=${payToken.toUHexString()}, pf=${pf.toUHexString()}, pfKey=${pfKey.toUHexString()}, da2=${da2.toUHexString()}, wtSessionTicket=$wtSessionTicket, wtSessionTicketKey=${wtSessionTicketKey.toUHexString()}, deviceToken=${deviceToken.toUHexString()})"
     }
 }
 

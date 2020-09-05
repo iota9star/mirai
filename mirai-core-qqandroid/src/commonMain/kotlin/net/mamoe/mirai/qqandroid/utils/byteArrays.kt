@@ -1,13 +1,13 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
 
-@file:Suppress("EXPERIMENTAL_UNSIGNED_LITERALS", "NOTHING_TO_INLINE")
+@file:Suppress("EXPERIMENTAL_UNSIGNED_LITERALS", "NOTHING_TO_INLINE", "INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
 @file:JvmMultifileClass
 @file:JvmName("Utils")
 
@@ -18,7 +18,6 @@ import kotlinx.io.charsets.Charsets
 import kotlinx.io.core.ByteReadPacket
 import kotlinx.io.core.String
 import kotlinx.io.core.use
-import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
 import kotlin.jvm.JvmMultifileClass
@@ -29,7 +28,6 @@ import kotlin.jvm.JvmSynthetic
 
 @JvmOverloads
 @Suppress("DuplicatedCode") // false positive. foreach is not common to UByteArray and ByteArray
-@OptIn(ExperimentalUnsignedTypes::class)
 internal fun List<Byte>.toUHexString(separator: String = " ", offset: Int = 0, length: Int = this.size - offset): String {
     require(offset >= 0) { "offset shouldn't be negative: $offset" }
     require(length >= 0) { "length shouldn't be negative: $length" }
@@ -51,9 +49,9 @@ internal fun List<Byte>.toUHexString(separator: String = " ", offset: Int = 0, l
     }
 }
 
+@kotlin.internal.LowPriorityInOverloadResolution
 @JvmOverloads
 @Suppress("DuplicatedCode") // false positive. foreach is not common to UByteArray and ByteArray
-@OptIn(ExperimentalUnsignedTypes::class)
 internal fun ByteArray.toUHexString(separator: String = " ", offset: Int = 0, length: Int = this.size - offset): String {
     this.checkOffsetAndLength(offset, length)
     if (length == 0) {
@@ -93,13 +91,13 @@ internal fun UByteArray.toUHexString(separator: String = " ", offset: Int = 0, l
 }
 
 @Suppress("NOTHING_TO_INLINE")
-internal inline fun ByteArray.encodeToString(charset: Charset = Charsets.UTF_8): String = String(this, charset = charset)
+internal inline fun ByteArray.encodeToString(offset: Int = 0, charset: Charset = Charsets.UTF_8): String =
+    String(this, charset = charset, offset = offset, length = this.size - offset)
 
 @PublishedApi
 internal inline fun ByteArray.toReadPacket(offset: Int = 0, length: Int = this.size - offset) =
     ByteReadPacket(this, offset = offset, length = length)
 
-@OptIn(ExperimentalContracts::class)
 internal inline fun <R> ByteArray.read(t: ByteReadPacket.() -> R): R {
     contract {
         callsInPlace(t, InvocationKind.EXACTLY_ONCE)

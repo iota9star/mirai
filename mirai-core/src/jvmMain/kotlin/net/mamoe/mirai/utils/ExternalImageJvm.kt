@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -11,22 +11,14 @@
 
 package net.mamoe.mirai.utils
 
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.io.ByteReadChannel
-import kotlinx.coroutines.withContext
 import kotlinx.io.core.Input
-import kotlinx.io.core.buildPacket
-import kotlinx.io.core.copyTo
-import kotlinx.io.errors.IOException
-import kotlinx.io.streams.asOutput
-import net.mamoe.mirai.utils.internal.md5
+import net.mamoe.mirai.Bot
+import net.mamoe.mirai.utils.internal.DeferredReusableInput
+import net.mamoe.mirai.utils.internal.asReusableInput
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.InputStream
-import java.io.OutputStream
 import java.net.URL
-import java.security.MessageDigest
-import javax.imageio.ImageIO
 
 /*
  * 将各类型图片容器转为 [ExternalImage]
@@ -34,124 +26,74 @@ import javax.imageio.ImageIO
 
 
 /**
- * 读取 [BufferedImage] 的属性, 然后构造 [ExternalImage]
+ * 将 [BufferedImage] 保存为临时文件, 然后构造 [ExternalImage]
  */
-@Throws(IOException::class)
-fun BufferedImage.toExternalImage(formatName: String = "gif"): ExternalImage {
-    val digest = MessageDigest.getInstance("md5")
-    digest.reset()
-
-    val buffer = buildPacket {
-        ImageIO.write(this@toExternalImage, formatName, object : OutputStream() {
-            override fun write(b: Int) {
-                b.toByte().let {
-                    this@buildPacket.writeByte(it)
-                    digest.update(it)
-                }
-            }
-        })
-    }
-
-    return ExternalImage(width, height, digest.digest(), formatName, buffer, getRandomString(16) + "." + formatName)
-}
-
-suspend inline fun BufferedImage.suspendToExternalImage(): ExternalImage = withContext(IO) { toExternalImage() }
+@JvmOverloads
+public fun BufferedImage.toExternalImage(formatName: String = "png"): ExternalImage =
+    ExternalImage(DeferredReusableInput(this, formatName))
 
 /**
- * 读取文件头识别图片属性, 然后构造 [ExternalImage]
+ * 将文件作为 [ExternalImage] 使用. 只会在需要的时候打开文件并读取数据.
+ * @param deleteOnClose 若为 `true`, 图片发送后将会删除这个文件
  */
-@OptIn(MiraiInternalAPI::class)
-@Throws(IOException::class)
-fun File.toExternalImage(): ExternalImage {
-    val input = ImageIO.createImageInputStream(this)
-    checkNotNull(input) { "Unable to read file(path=${this.path}), no ImageInputStream found" }
-    val image = ImageIO.getImageReaders(input).asSequence().firstOrNull()
-        ?: error("Unable to read file(path=${this.path}), no ImageReader found (file type not supported)")
-    image.input = input
-
-    return ExternalImage(
-        width = image.getWidth(0),
-        height = image.getHeight(0),
-        md5 = this.inputStream().md5(), // dont change
-        imageFormat = image.formatName,
-        input = this.inputStream(),
-        filename = this.name
-    )
+@JvmOverloads
+public fun File.toExternalImage(deleteOnClose: Boolean = false): ExternalImage {
+    require(this.isFile) { "File must be a file" }
+    require(this.exists()) { "File must exist" }
+    require(this.canRead()) { "File must can be read" }
+    return ExternalImage(asReusableInput(deleteOnClose))
 }
 
 /**
- * 在 [IO] 中进行 [File.toExternalImage]
+ * 将 [InputStream] 委托为 [ExternalImage].
+ * 只会在上传图片时才读取 [InputStream] 的内容. 具体行为取决于相关 [Bot] 的 [FileCacheStrategy]
  */
-suspend inline fun File.suspendToExternalImage(): ExternalImage = withContext(IO) { toExternalImage() }
+public fun InputStream.toExternalImage(): ExternalImage = ExternalImage(DeferredReusableInput(this, null))
 
 /**
- * 下载文件到临时目录然后调用 [File.toExternalImage]
- */
-@Throws(IOException::class)
-fun URL.toExternalImage(): ExternalImage {
-    val file = createTempFile().apply { deleteOnExit() }
-    file.outputStream().use { output ->
-        openStream().use { input ->
-            input.copyTo(output)
-        }
-        output.flush()
-    }
-    return file.toExternalImage()
-}
-
-/**
- * 在 [IO] 中进行 [URL.toExternalImage]
- */
-suspend inline fun URL.suspendToExternalImage(): ExternalImage = withContext(IO) { toExternalImage() }
-
-/**
- * 保存为临时文件然后调用 [File.toExternalImage]
- */
-@Throws(IOException::class)
-fun InputStream.toExternalImage(): ExternalImage {
-    val file = createTempFile().apply { deleteOnExit() }
-    file.outputStream().use {
-        this.copyTo(it)
-        it.flush()
-    }
-    this.close()
-    return file.toExternalImage()
-}
-
-/**
- * 在 [IO] 中进行 [InputStream.toExternalImage]
- */
-suspend inline fun InputStream.suspendToExternalImage(): ExternalImage = withContext(IO) { toExternalImage() }
-
-/**
- * 保存为临时文件然后调用 [File.toExternalImage].
+ * 将 [URL] 委托为 [ExternalImage].
  *
- * 需要函数调用者 close [this]
+ * 只会在上传图片时才读取 [URL] 的内容. 具体行为取决于相关 [Bot] 的 [FileCacheStrategy]
  */
-@Throws(IOException::class)
-fun Input.toExternalImage(): ExternalImage {
-    val file = createTempFile().apply { deleteOnExit() }
-    file.outputStream().asOutput().use {
-        this.copyTo(it)
-        it.flush()
-    }
-    return file.toExternalImage()
-}
+@Deprecated(
+    "请自行通过 URL.openConnection 得到 InputStream 后调用其扩展",
+    replaceWith = ReplaceWith("this.openConnection().toExternalImage"),
+    level = DeprecationLevel.WARNING
+)
+public fun URL.toExternalImage(): ExternalImage = ExternalImage(DeferredReusableInput(this, null))
 
 /**
- * 在 [IO] 中进行 [Input.toExternalImage]
+ * 将 [Input] 委托为 [ExternalImage].
+ * 只会在上传图片时才读取 [Input] 的内容. 具体行为取决于相关 [Bot] 的 [FileCacheStrategy]
  */
-suspend inline fun Input.suspendToExternalImage(): ExternalImage = withContext(IO) { toExternalImage() }
+@Deprecated(
+    "已弃用对 kotlinx.io 的支持",
+    level = DeprecationLevel.ERROR
+)
+public fun Input.toExternalImage(): ExternalImage = ExternalImage(DeferredReusableInput(this, null))
 
-/**
- * 保存为临时文件然后调用 [File.toExternalImage].
- */
-suspend fun ByteReadChannel.toExternalImage(): ExternalImage {
-    val file = createTempFile().apply { deleteOnExit() }
-    file.outputStream().use {
-        withContext(IO) { copyTo(it) }
-        it.flush()
-    }
 
-    return file.suspendToExternalImage()
-}
+@PlannedRemoval("1.2.0")
+@Suppress("RedundantSuspendModifier", "DEPRECATION_ERROR")
+@Deprecated("no need", ReplaceWith("toExternalImage()"), level = DeprecationLevel.HIDDEN)
+public suspend fun Input.suspendToExternalImage(): ExternalImage = toExternalImage()
+
+@Suppress("RedundantSuspendModifier")
+@PlannedRemoval("1.2.0")
+@Deprecated("no need", ReplaceWith("toExternalImage()"), level = DeprecationLevel.HIDDEN)
+public suspend fun InputStream.suspendToExternalImage(): ExternalImage = toExternalImage()
+
+@Suppress("RedundantSuspendModifier", "DEPRECATION")
+@PlannedRemoval("1.2.0")
+@Deprecated("no need", ReplaceWith("toExternalImage()"), level = DeprecationLevel.HIDDEN)
+public suspend fun URL.suspendToExternalImage(): ExternalImage = toExternalImage()
+
+@Suppress("RedundantSuspendModifier")
+@PlannedRemoval("1.2.0")
+@Deprecated("no need", ReplaceWith("toExternalImage()"), level = DeprecationLevel.HIDDEN)
+public suspend fun File.suspendToExternalImage(): ExternalImage = toExternalImage()
+
+@Suppress("RedundantSuspendModifier")
+@PlannedRemoval("1.2.0")
+@Deprecated("no need", ReplaceWith("toExternalImage()"), level = DeprecationLevel.HIDDEN)
+public suspend fun BufferedImage.suspendToExternalImage(): ExternalImage = toExternalImage()

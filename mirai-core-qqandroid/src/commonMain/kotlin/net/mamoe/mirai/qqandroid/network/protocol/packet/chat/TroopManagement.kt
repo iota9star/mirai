@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -33,7 +33,7 @@ import net.mamoe.mirai.data.GroupInfo as MiraiGroupInfo
 @OptIn(LowLevelAPI::class)
 internal class GroupInfoImpl(
     internal val delegate: Oidb0x88d.GroupInfo
-) : MiraiGroupInfo, Packet {
+) : MiraiGroupInfo, Packet, Packet.NoLog {
     override val uin: Long get() = delegate.groupUin ?: error("cannot find groupUin")
     override val owner: Long get() = delegate.groupOwner ?: error("cannot find groupOwner")
     override val groupCode: Long get() = Group.calculateGroupCodeByGroupUin(uin)
@@ -44,7 +44,7 @@ internal class GroupInfoImpl(
     override val autoApprove get() = delegate.groupFlagext3?.and(0x00100000) == 0
     override val confessTalk get() = delegate.groupFlagext3?.and(0x00002000) == 0
     override val muteAll: Boolean get() = delegate.shutupTimestamp != 0
-    override val botMuteRemaining: Int get() = delegate.shutupTimestampMe ?: 0
+    override val botMuteTimestamp: Int get() = delegate.shutupTimestampMe ?: 0
 }
 
 internal class TroopManagement {
@@ -100,7 +100,7 @@ internal class TroopManagement {
                         serviceType = 7,
                         result = 0,
                         bodybuffer = Oidb0x88d.ReqBody(
-                            appid = 537062845,
+                            appid = client.subAppId.toInt(),
                             stzreqgroupinfo = listOf(
                                 Oidb0x88d.ReqGroupInfo(
                                     stgroupinfo = Oidb0x88d.GroupInfo(
@@ -146,14 +146,17 @@ internal class TroopManagement {
 
     internal object Kick : OutgoingPacketFactory<Kick.Response>("OidbSvc.0x8a0_0") {
         override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): Response {
+            val ret = this.readBytes()
+                .loadAs(OidbSso.OIDBSSOPkg.serializer()).bodybuffer.loadAs(Oidb0x8a0.RspBody.serializer()).msgKickResult!![0].optUint32Result
             return Response(
-                this.readBytes()
-                    .loadAs(OidbSso.OIDBSSOPkg.serializer()).bodybuffer.loadAs(Oidb0x8a0.RspBody.serializer()).msgKickResult!![0].optUint32Result == 1
+                ret == 0,
+                ret
             )
         }
 
         class Response(
-            val success: Boolean
+            val success: Boolean,
+            val ret: Int
         ) : Packet {
             override fun toString(): String = "TroopManagement.Kick.Response($success)"
         }
@@ -380,9 +383,14 @@ internal class TroopManagement {
 
     internal object EditGroupNametag :
         OutgoingPacketFactory<EditGroupNametag.Response>("friendlist.ModifyGroupCardReq") {
-        object Response : Packet
+        object Response : Packet {
+            override fun toString(): String {
+                return "TroopManagement.EditGroupNametag.Response"
+            }
+        }
 
         override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): EditGroupNametag.Response {
+            this.close()
             return Response
         }
 

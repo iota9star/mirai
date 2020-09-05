@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -22,22 +22,60 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.io.core.use
 import net.mamoe.mirai.Bot
-import net.mamoe.mirai.network.BotNetworkHandler
+import net.mamoe.mirai.network.NoStandardInputForCaptchaException
 import java.awt.Image
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.RandomAccessFile
 import javax.imageio.ImageIO
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 
-actual typealias Throws = kotlin.jvm.Throws
-
+/**
+ * 自动选择 [SwingSolver] 或 [StandardCharImageLoginSolver]
+ */
 @MiraiExperimentalAPI
-class DefaultLoginSolver(
-    private val input: suspend () -> String,
+public class DefaultLoginSolver(
+    public val input: suspend () -> String,
+    public val overrideLogger: MiraiLogger? = null
+) : LoginSolver() {
+    private val delegate: LoginSolver
+
+    init {
+        if (WindowHelperJvm.isDesktopSupported) {
+            delegate = SwingSolver
+        } else {
+            delegate = StandardCharImageLoginSolver(input, overrideLogger)
+        }
+    }
+
+    override suspend fun onSolvePicCaptcha(bot: Bot, data: ByteArray): String? {
+        return delegate.onSolvePicCaptcha(bot, data)
+    }
+
+    override suspend fun onSolveSliderCaptcha(bot: Bot, url: String): String? {
+        return delegate.onSolveSliderCaptcha(bot, url)
+    }
+
+    override suspend fun onSolveUnsafeDeviceLoginVerify(bot: Bot, url: String): String? {
+        return delegate.onSolveUnsafeDeviceLoginVerify(bot, url)
+    }
+}
+
+/**
+ * 使用字符图片展示验证码, 使用 [input] 获取输入, 使用 [overrideLogger] 输出
+ */
+@MiraiExperimentalAPI
+public class StandardCharImageLoginSolver(
+    input: suspend () -> String,
+    /**
+     * 为 `null` 时使用 [Bot.logger]
+     */
     private val overrideLogger: MiraiLogger? = null
 ) : LoginSolver() {
+    private val input: suspend () -> String = suspend {
+        withContext(Dispatchers.IO) { input() }
+    }
+
     override suspend fun onSolvePicCaptcha(bot: Bot, data: ByteArray): String? = loginSolverLock.withLock {
         val logger = overrideLogger ?: bot.logger
         val tempFile: File = createTempFile(suffix = ".png").apply { deleteOnExit() }
@@ -60,7 +98,7 @@ class DefaultLoginSolver(
                         logger.info(img.createCharImg())
                     }
                 } catch (throwable: Throwable) {
-                    logger.info("创建字符图片时出错(${throwable.toString()})。请查看文件")
+                    logger.info("创建字符图片时出错($throwable)。请查看文件")
                 }
             }
         }
@@ -98,15 +136,15 @@ class DefaultLoginSolver(
 /**
  * 验证码, 设备锁解决器
  */
-actual abstract class LoginSolver {
-    actual abstract suspend fun onSolvePicCaptcha(bot: Bot, data: ByteArray): String?
-    actual abstract suspend fun onSolveSliderCaptcha(bot: Bot, url: String): String?
-    actual abstract suspend fun onSolveUnsafeDeviceLoginVerify(bot: Bot, url: String): String?
+public actual abstract class LoginSolver {
+    public actual abstract suspend fun onSolvePicCaptcha(bot: Bot, data: ByteArray): String?
+    public actual abstract suspend fun onSolveSliderCaptcha(bot: Bot, url: String): String?
+    public actual abstract suspend fun onSolveUnsafeDeviceLoginVerify(bot: Bot, url: String): String?
 
-    actual companion object {
-        actual val Default: LoginSolver
-            @OptIn(MiraiExperimentalAPI::class)
-            get() = DefaultLoginSolver(input = { withContext(Dispatchers.IO) { readLine() } ?: error("No standard input") })
+    public actual companion object {
+        public actual val Default: LoginSolver =
+
+            DefaultLoginSolver({ readLine() ?: throw NoStandardInputForCaptchaException(null) })
     }
 }
 
@@ -114,9 +152,9 @@ actual abstract class LoginSolver {
 //////////////// internal
 ///////////////////////////////
 
-internal actual fun getFileBasedDeviceInfoSupplier(filename: String): ((Context) -> DeviceInfo)? {
+internal fun BotConfiguration.getFileBasedDeviceInfoSupplier(filename: String): ((Context) -> DeviceInfo)? {
     return {
-        File(filename).loadAsDeviceInfo(it)
+        File(filename).loadAsDeviceInfo(json, it)
     }
 }
 
@@ -149,7 +187,8 @@ private fun BufferedImage.createCharImg(outputWidth: Int = 100, ignoreRate: Doub
         return (r * 30 + g * 59 + b * 11 + 50) / 100
     }
 
-    fun grayCompare(g1: Int, g2: Int): Boolean = kotlin.math.min(g1, g2).toDouble() / kotlin.math.max(g1, g2) >= ignoreRate
+    fun grayCompare(g1: Int, g2: Int): Boolean =
+        kotlin.math.min(g1, g2).toDouble() / kotlin.math.max(g1, g2) >= ignoreRate
 
     val background = gray(image.getRGB(0, 0))
 

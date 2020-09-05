@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -10,42 +10,42 @@
 package net.mamoe.mirai.qqandroid.network.protocol.packet
 
 import kotlinx.io.core.*
-import kotlinx.io.pool.useInstance
 import net.mamoe.mirai.event.Event
 import net.mamoe.mirai.qqandroid.QQAndroidBot
 import net.mamoe.mirai.qqandroid.network.Packet
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.MultiMsg
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.NewContact
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.PbMessageSvc
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.TroopManagement
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.image.ImgStore
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.image.LongConn
-import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.MessageSvc
-import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.OnlinePush
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.*
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.voice.PttStore
 import net.mamoe.mirai.qqandroid.network.protocol.packet.list.FriendList
+import net.mamoe.mirai.qqandroid.network.protocol.packet.list.ProfileService
 import net.mamoe.mirai.qqandroid.network.protocol.packet.login.ConfigPushSvc
 import net.mamoe.mirai.qqandroid.network.protocol.packet.login.Heartbeat
 import net.mamoe.mirai.qqandroid.network.protocol.packet.login.StatSvc
 import net.mamoe.mirai.qqandroid.network.protocol.packet.login.WtLogin
 import net.mamoe.mirai.qqandroid.network.readUShortLVByteArray
 import net.mamoe.mirai.qqandroid.utils.*
-import net.mamoe.mirai.qqandroid.utils.ByteArrayPool
-import net.mamoe.mirai.qqandroid.utils.MiraiPlatformUtils
 import net.mamoe.mirai.qqandroid.utils.cryptor.TEA
 import net.mamoe.mirai.qqandroid.utils.cryptor.adjustToPublicKey
 import net.mamoe.mirai.qqandroid.utils.io.readPacketExact
 import net.mamoe.mirai.qqandroid.utils.io.readString
 import net.mamoe.mirai.qqandroid.utils.io.useBytes
 import net.mamoe.mirai.qqandroid.utils.io.withUse
-import net.mamoe.mirai.qqandroid.utils.toReadPacket
-import net.mamoe.mirai.qqandroid.utils.toUHexString
 import net.mamoe.mirai.utils.*
 import kotlin.jvm.JvmName
+import kotlin.jvm.JvmOverloads
 
 internal sealed class PacketFactory<TPacket : Packet?> {
     /**
      * 筛选从服务器接收到的包时的 commandName
      */
     abstract val receivingCommandName: String
+
+    open val canBeCached: Boolean get() = true
 }
 
 /**
@@ -56,7 +56,6 @@ internal sealed class PacketFactory<TPacket : Packet?> {
  *
  * @param TPacket 服务器回复包解析结果
  */
-@OptIn(ExperimentalUnsignedTypes::class)
 internal abstract class OutgoingPacketFactory<TPacket : Packet?>(
     /**
      * 命令名. 如 `wtlogin.login`, `ConfigPushSvc.PushDomain`
@@ -125,21 +124,25 @@ internal typealias PacketConsumer<T> = suspend (packetFactory: PacketFactory<T>,
  * 它默认是关闭的.
  */
 @PublishedApi
-internal val PacketLogger: MiraiLoggerWithSwitch = DefaultLogger("Packet").withSwitch(false)
+internal val PacketLogger: MiraiLoggerWithSwitch by lazy {
+    DefaultLogger("Packet").withSwitch(false)
+}
 
-@OptIn(ExperimentalUnsignedTypes::class)
 internal object KnownPacketFactories {
     object OutgoingFactories : List<OutgoingPacketFactory<*>> by mutableListOf(
         WtLogin.Login,
         StatSvc.Register,
         StatSvc.GetOnlineStatus,
-        MessageSvc.PbGetMsg,
-        MessageSvc.PushForceOffline,
-        MessageSvc.PbSendMsg,
+        MessageSvcPbGetMsg,
+        MessageSvcPushForceOffline,
+        MessageSvcPbSendMsg,
+        MessageSvcPbDeleteMsg,
         FriendList.GetFriendGroupList,
         FriendList.GetTroopListSimplify,
         FriendList.GetTroopMemberList,
         ImgStore.GroupPicUp,
+        PttStore.GroupPttUp,
+        PttStore.GroupPttDown,
         LongConn.OffPicUp,
         LongConn.OffPicDown,
         TroopManagement.EditSpecialTitle,
@@ -150,19 +153,22 @@ internal object KnownPacketFactories {
         TroopManagement.Kick,
         Heartbeat.Alive,
         PbMessageSvc.PbMsgWithDraw,
-        MultiMsg.ApplyUp
+        MultiMsg.ApplyUp,
+        NewContact.SystemMsgNewFriend,
+        NewContact.SystemMsgNewGroup,
+        ProfileService.GroupMngReq
     )
 
     object IncomingFactories : List<IncomingPacketFactory<*>> by mutableListOf(
-        OnlinePush.PbPushGroupMsg,
-        OnlinePush.ReqPush,
-        OnlinePush.PbPushTransMsg,
-        MessageSvc.PushNotify,
+        OnlinePushPbPushGroupMsg,
+        OnlinePushReqPush,
+        OnlinePushPbPushTransMsg,
+        MessageSvcPushNotify,
         ConfigPushSvc.PushReq,
         StatSvc.ReqMSFOffline
     )
     // SvcReqMSFLoginNotify 自己的其他设备上限
-    // MessageSvc.PushReaded 电脑阅读了别人的消息, 告知手机
+    // MessageSvcPushReaded 电脑阅读了别人的消息, 告知手机
     // OnlinePush.PbC2CMsgSync 电脑发消息给别人, 同步给手机
 
     @Suppress("MemberVisibilityCanBePrivate") // debugging use
@@ -171,10 +177,18 @@ internal object KnownPacketFactories {
             ?: IncomingFactories.firstOrNull { it.receivingCommandName == commandName }
     }
 
+    class PacketFactoryIllegalState10008Exception @JvmOverloads constructor(
+        override val message: String? = null,
+        override val cause: Throwable? = null
+    ) : RuntimeException()
+
     // do not inline. Exceptions thrown will not be reported correctly
-    @OptIn(MiraiInternalAPI::class)
     @Suppress("UNCHECKED_CAST")
-    suspend fun <T : Packet?> parseIncomingPacket(bot: QQAndroidBot, rawInput: Input, consumer: PacketConsumer<T>) =
+    suspend fun <T : Packet?> parseIncomingPacket(
+        bot: QQAndroidBot,
+        rawInput: ByteReadPacket,
+        consumer: PacketConsumer<T>
+    ) =
         with(rawInput) {
             // login
             val flag1 = readInt()
@@ -190,7 +204,8 @@ internal object KnownPacketFactories {
 
             readString(readInt() - 4)// uinAccount
 
-            ByteArrayPool.useInstance { data ->
+            @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+            ByteArrayPool.useInstance(this.remaining.toInt()) { data ->
                 val size = this.readAvailable(data)
 
                 kotlin.runCatching {
@@ -211,7 +226,8 @@ internal object KnownPacketFactories {
                 }?.let {
                     it as IncomingPacket<T>
 
-                    if (it.packetFactory is IncomingPacketFactory<T> && bot.network.pendingEnabled) {
+                    if (it.packetFactory is IncomingPacketFactory<T> && it.packetFactory.canBeCached && bot.network.pendingEnabled) {
+                        @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
                         bot.network.pendingIncomingPackets?.addLast(it.also {
                             it.consumer = consumer
                             it.flag2 = flag2
@@ -227,7 +243,6 @@ internal object KnownPacketFactories {
             }
         }
 
-    @OptIn(MiraiInternalAPI::class)
     internal suspend fun <T : Packet?> handleIncomingPacket(
         it: IncomingPacket<T>,
         bot: QQAndroidBot,
@@ -235,14 +250,16 @@ internal object KnownPacketFactories {
         consumer: PacketConsumer<T>
     ) {
         if (it.packetFactory == null) {
-            bot.network.logger.debug("Received commandName: ${it.commandName}")
+            bot.network.logger.debug { "Received unknown commandName: ${it.commandName}" }
             PacketLogger.warning { "找不到 PacketFactory" }
             PacketLogger.verbose {
-                "传递给 PacketFactory 的数据 = ${it.data.useBytes { data, length ->
-                    data.toUHexString(
-                        length = length
-                    )
-                }}"
+                "传递给 PacketFactory 的数据 = ${
+                    it.data.useBytes { data, length ->
+                        data.toUHexString(
+                            length = length
+                        )
+                    }
+                }"
             }
             return
         }
@@ -250,21 +267,20 @@ internal object KnownPacketFactories {
         PacketLogger.info { "Handle packet: ${it.commandName}" }
         it.data.withUse {
             when (flag2) {
-                0, 1 ->
-                    when (it.packetFactory) {
-                        is OutgoingPacketFactory<*> -> consumer(
-                            it.packetFactory as OutgoingPacketFactory<T>,
-                            it.packetFactory.run { decode(bot, it.data) },
-                            it.packetFactory.commandName,
-                            it.sequenceId
-                        )
-                        is IncomingPacketFactory<*> -> consumer(
-                            it.packetFactory as IncomingPacketFactory<T>,
-                            it.packetFactory.run { decode(bot, it.data, it.sequenceId) },
-                            it.packetFactory.receivingCommandName,
-                            it.sequenceId
-                        )
-                    }
+                0, 1 -> when (it.packetFactory) {
+                    is OutgoingPacketFactory<*> -> consumer(
+                        it.packetFactory as OutgoingPacketFactory<T>,
+                        it.packetFactory.run { decode(bot, it.data) },
+                        it.packetFactory.commandName,
+                        it.sequenceId
+                    )
+                    is IncomingPacketFactory<*> -> consumer(
+                        it.packetFactory as IncomingPacketFactory<T>,
+                        it.packetFactory.run { decode(bot, it.data, it.sequenceId) },
+                        it.packetFactory.receivingCommandName,
+                        it.sequenceId
+                    )
+                }
 
                 2 -> it.data.parseOicqResponse(
                     bot,
@@ -289,7 +305,6 @@ internal object KnownPacketFactories {
         lateinit var consumer: PacketConsumer<T>
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class, MiraiInternalAPI::class)
     private fun parseSsoFrame(bot: QQAndroidBot, input: ByteReadPacket): IncomingPacket<*> {
         val commandName: String
         val ssoSequenceId: Int
@@ -297,8 +312,14 @@ internal object KnownPacketFactories {
         input.readPacketExact(input.readInt() - 4).withUse {
             ssoSequenceId = readInt()
             PacketLogger.verbose { "sequenceId = $ssoSequenceId" }
+
             val returnCode = readInt()
-            check(returnCode == 0) { "returnCode = $returnCode" }
+            check(returnCode == 0) {
+                if (returnCode == -10008) { // https://github.com/mamoe/mirai/issues/470
+                    throw PacketFactoryIllegalState10008Exception("returnCode = $returnCode")
+                } else "returnCode = $returnCode"
+            }
+
             if (PacketLogger.isEnabled) {
                 val extraData = readBytes(readInt() - 4)
                 PacketLogger.verbose { "(sso/inner)extraData = ${extraData.toUHexString()}" }
@@ -348,7 +369,6 @@ internal object KnownPacketFactories {
         return IncomingPacket(packetFactory, ssoSequenceId, packet, commandName)
     }
 
-    @OptIn(MiraiInternalAPI::class)
     private suspend fun <T : Packet?> ByteReadPacket.parseOicqResponse(
         bot: QQAndroidBot,
         packetFactory: OutgoingPacketFactory<T>,
@@ -377,7 +397,8 @@ internal object KnownPacketFactories {
             }
             0 -> {
                 val data = if (bot.client.loginState == 0) {
-                    ByteArrayPool.useInstance { byteArrayBuffer ->
+                    @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+                    ByteArrayPool.useInstance(this.remaining.toInt()) { byteArrayBuffer ->
                         val size = (this.remaining - 1).toInt()
                         this.readFully(byteArrayBuffer, 0, size)
 

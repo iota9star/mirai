@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -21,22 +21,24 @@ import kotlin.jvm.JvmOverloads
 
 /**
  * 用于创建默认的日志记录器. 在一些需要使用日志的 Mirai 的组件, 如 [Bot], 都会通过这个函数构造日志记录器.
+ *
  * 可直接修改这个变量的值来重定向日志输出.
  *
  * **注意:** 请务必将所有的输出定向到日志记录系统, 否则在某些情况下 (如 web 控制台中) 将无法接收到输出
  *
  * **注意:** 请为日志做好分类, 即不同的模块使用不同的 [MiraiLogger].
- * 如, [Bot] 中使用 identity 为 "Bot(qqId)" 的 [MiraiLogger]
- * 而 [Bot] 的网络处理中使用 identity 为 "BotNetworkHandler" 的.
+ * 如, [Bot] 中使用 `identity` 为 "Bot(qqId)" 的 [MiraiLogger]
+ * 而 [Bot] 的网络处理中使用 `identity` 为 "BotNetworkHandler".
+ *
+ * Java 调用: `Utils.getDefaultLogger().invoke(identity)`
  */
-var DefaultLogger: (identity: String?) -> MiraiLogger = { PlatformLogger(it) }
+public var DefaultLogger: (identity: String?) -> MiraiLogger = { PlatformLogger(it) }
 
 /**
  * 给这个 logger 添加一个开关, 用于控制是否记录 log
- *
  */
 @JvmOverloads
-fun MiraiLogger.withSwitch(default: Boolean = true): MiraiLoggerWithSwitch = MiraiLoggerWithSwitch(this, default)
+public fun MiraiLogger.withSwitch(default: Boolean = true): MiraiLoggerWithSwitch = MiraiLoggerWithSwitch(this, default)
 
 /**
  * 日志记录器. 所有的输出均依赖于它.
@@ -52,9 +54,9 @@ fun MiraiLogger.withSwitch(default: Boolean = true): MiraiLoggerWithSwitch = Mir
  * @see PlatformLogger 各个平台下的默认日志记录实现.
  * @see SilentLogger 忽略任何日志记录操作的 logger 实例.
  *
- * @see MiraiLoggerPlatformBase 平台通用基础实现. 若
+ * @see MiraiLoggerPlatformBase 平台通用基础实现. 若 Mirai 自带的日志系统无法满足需求, 请继承这个类并实现其抽象函数.
  */
-interface MiraiLogger {
+public interface MiraiLogger {
     /**
      * 顶层日志记录器.
      *
@@ -62,7 +64,7 @@ interface MiraiLogger {
      * 请参考使用 [DefaultLogger]
      */
     @Deprecated(message = "顶层日志会导致混乱并难以定位问题. 请自行构造 logger 实例并使用.", level = DeprecationLevel.WARNING)
-    companion object : MiraiLogger by DefaultLogger("Mirai")
+    public companion object : MiraiLogger by DefaultLogger("Mirai")
 
     /**
      * 日志的标记. 在 Mirai 中, identity 可为
@@ -72,71 +74,74 @@ interface MiraiLogger {
      *
      * 它只用于帮助调试或统计. 十分建议清晰定义 identity
      */
-    val identity: String?
+    public val identity: String?
 
     /**
      * 获取 [MiraiLogger] 是否已开启
      *
      * 除 [MiraiLoggerWithSwitch] 可控制开关外, 其他的所有 [MiraiLogger] 均一直开启.
      */
-    val isEnabled: Boolean
+    public val isEnabled: Boolean
 
     /**
      * 随从. 在 this 中调用所有方法后都应继续往 [follower] 传递调用.
      * [follower] 的存在可以让一次日志被多个日志记录器记录.
      *
      * 一般不建议直接修改这个属性. 请通过 [plus] 来连接两个日志记录器.
-     * 如: `val logger = bot.logger + MyOwnLogger()`
-     * 这样, 当调用 `logger.info()` 时, bot.logger 会首先记录, MyOwnLogger 会随后记录.
+     * 如: `val logger = bot.logger + MyLogger()`
+     * 当调用 `logger.info()` 时, `bot.logger` 会首先记录, `MyLogger` 会随后记录.
      *
-     * 当然, 多个 logger 也可以加在一起: `val logger = bot.logger + MyOwnLogger() + MyOwnLogger2()`
+     * 当然, 多个 logger 也可以加在一起: `val logger = bot.logger + MynLogger() + MyLogger2()`
      */
-    var follower: MiraiLogger?
+    public var follower: MiraiLogger?
 
     /**
      * 记录一个 `verbose` 级别的日志.
      * 无关紧要的, 经常大量输出的日志应使用它.
      */
-    fun verbose(message: String?)
+    public fun verbose(message: String?)
 
-    fun verbose(e: Throwable?) = verbose(null, e)
-    fun verbose(message: String?, e: Throwable?)
+    public fun verbose(e: Throwable?): Unit = verbose(null, e)
+    public fun verbose(message: String?, e: Throwable?)
 
     /**
      * 记录一个 _调试_ 级别的日志.
      */
-    fun debug(message: String?)
+    public fun debug(message: String?)
 
-    fun debug(e: Throwable?) = debug(null, e)
-    fun debug(message: String?, e: Throwable?)
+    public fun debug(e: Throwable?): Unit = debug(null, e)
+    public fun debug(message: String?, e: Throwable?)
 
 
     /**
      * 记录一个 _信息_ 级别的日志.
      */
-    fun info(message: String?)
+    public fun info(message: String?)
 
-    fun info(e: Throwable?) = info(null, e)
-    fun info(message: String?, e: Throwable?)
+    public fun info(e: Throwable?): Unit = info(null, e)
+    public fun info(message: String?, e: Throwable?)
 
 
     /**
      * 记录一个 _警告_ 级别的日志.
      */
-    fun warning(message: String?)
+    public fun warning(message: String?)
 
-    fun warning(e: Throwable?) = warning(null, e)
-    fun warning(message: String?, e: Throwable?)
+    public fun warning(e: Throwable?): Unit = warning(null, e)
+    public fun warning(message: String?, e: Throwable?)
 
 
     /**
      * 记录一个 _错误_ 级别的日志.
      */
-    fun error(message: String?)
+    public fun error(message: String?)
 
-    fun error(e: Throwable?) = error(null, e)
-    fun error(message: String?, e: Throwable?)
+    public fun error(e: Throwable?): Unit = error(null, e)
+    public fun error(message: String?, e: Throwable?)
 
+    /** 根据优先级调用对应函数 */
+    public fun call(priority: SimpleLogger.LogPriority, message: String? = null, e: Throwable? = null): Unit =
+        priority.correspondingFunction(this, message, e)
 
     /**
      * 添加一个 [follower], 返回 [follower]
@@ -149,7 +154,7 @@ interface MiraiLogger {
      *
      * @return [follower]
      */
-    operator fun <T : MiraiLogger> plus(follower: T): T
+    public operator fun <T : MiraiLogger> plus(follower: T): T
 
     /**
      * 添加一个 [follower]
@@ -157,47 +162,47 @@ interface MiraiLogger {
      *
      * @see follower
      */
-    operator fun plusAssign(follower: MiraiLogger)
+    public operator fun plusAssign(follower: MiraiLogger)
 }
 
 
-inline fun MiraiLogger.verbose(lazyMessage: () -> String) {
+public inline fun MiraiLogger.verbose(lazyMessage: () -> String) {
     if (isEnabled) verbose(lazyMessage())
 }
 
-inline fun MiraiLogger.verbose(lazyMessage: () -> String, e: Throwable?) {
+public inline fun MiraiLogger.verbose(lazyMessage: () -> String, e: Throwable?) {
     if (isEnabled) verbose(lazyMessage(), e)
 }
 
-inline fun MiraiLogger.debug(lazyMessage: () -> String?) {
+public inline fun MiraiLogger.debug(lazyMessage: () -> String?) {
     if (isEnabled) debug(lazyMessage())
 }
 
-inline fun MiraiLogger.debug(lazyMessage: () -> String?, e: Throwable?) {
+public inline fun MiraiLogger.debug(lazyMessage: () -> String?, e: Throwable?) {
     if (isEnabled) debug(lazyMessage(), e)
 }
 
-inline fun MiraiLogger.info(lazyMessage: () -> String?) {
+public inline fun MiraiLogger.info(lazyMessage: () -> String?) {
     if (isEnabled) info(lazyMessage())
 }
 
-inline fun MiraiLogger.info(lazyMessage: () -> String?, e: Throwable?) {
+public inline fun MiraiLogger.info(lazyMessage: () -> String?, e: Throwable?) {
     if (isEnabled) info(lazyMessage(), e)
 }
 
-inline fun MiraiLogger.warning(lazyMessage: () -> String?) {
+public inline fun MiraiLogger.warning(lazyMessage: () -> String?) {
     if (isEnabled) warning(lazyMessage())
 }
 
-inline fun MiraiLogger.warning(lazyMessage: () -> String?, e: Throwable?) {
+public inline fun MiraiLogger.warning(lazyMessage: () -> String?, e: Throwable?) {
     if (isEnabled) warning(lazyMessage(), e)
 }
 
-inline fun MiraiLogger.error(lazyMessage: () -> String?) {
+public inline fun MiraiLogger.error(lazyMessage: () -> String?) {
     if (isEnabled) error(lazyMessage())
 }
 
-inline fun MiraiLogger.error(lazyMessage: () -> String?, e: Throwable?) {
+public inline fun MiraiLogger.error(lazyMessage: () -> String?, e: Throwable?) {
     if (isEnabled) error(lazyMessage(), e)
 }
 
@@ -206,46 +211,72 @@ inline fun MiraiLogger.error(lazyMessage: () -> String?, e: Throwable?) {
  * 在 _JVM 控制台_ 端的实现为 [println]
  * 在 _Android_ 端的实现为 `android.util.Log`
  *
- * 不应该直接构造这个类的实例. 请使用 [DefaultLogger], 或使用默认的顶层日志记录 [MiraiLogger.Companion]
+ *
+ * 单条日志格式 (正则) 为:
+ * ```regex
+ * ^([\w-]*\s[\w:]*)\s(\w)\/(.*?):\s(.+)$
+ * ```
+ * 其中 group 分别为: 日期与时间, 严重程度, [identity], 消息内容.
+ *
+ * 示例:
+ * ```log
+ * 2020-05-21 19:51:09 V/Bot 1994701021: Send: OidbSvc.0x88d_7
+ * ```
+ *
+ * 日期时间格式为 `yyyy-MM-dd HH:mm:ss`,
+ *
+ * 严重程度为 V, I, W, E. 分别对应 verbose, info, warning, error
+ *
+ * @see DefaultLogger
  */
-expect open class PlatformLogger @JvmOverloads constructor(identity: String? = "Mirai") : MiraiLoggerPlatformBase
+public expect open class PlatformLogger @JvmOverloads constructor(identity: String? = "Mirai") : MiraiLoggerPlatformBase
 
 
 /**
  * 不做任何事情的 logger, keep silent.
  */
 @Suppress("unused")
-object SilentLogger : PlatformLogger() {
-    override val identity: String? = null
+public object SilentLogger : PlatformLogger() {
+    public override val identity: String? = null
 
-    override fun error0(message: String?) = Unit
-    override fun debug0(message: String?) = Unit
-    override fun warning0(message: String?) = Unit
-    override fun verbose0(message: String?) = Unit
-    override fun info0(message: String?) = Unit
+    public override fun error0(message: String?): Unit = Unit
+    public override fun debug0(message: String?): Unit = Unit
+    public override fun warning0(message: String?): Unit = Unit
+    public override fun verbose0(message: String?): Unit = Unit
+    public override fun info0(message: String?): Unit = Unit
+
+    public override fun verbose0(message: String?, e: Throwable?): Unit = Unit
+    public override fun debug0(message: String?, e: Throwable?): Unit = Unit
+    public override fun info0(message: String?, e: Throwable?): Unit = Unit
+    public override fun warning0(message: String?, e: Throwable?): Unit = Unit
+    public override fun error0(message: String?, e: Throwable?): Unit = Unit
 }
 
 /**
  * 简易日志记录, 所有类型日志都会被重定向 [logger]
  */
-class SimpleLogger(
-    override val identity: String?,
-    private val logger: (priority: LogPriority, message: String?, e: Throwable?) -> Unit
+public open class SimpleLogger(
+    public final override val identity: String?,
+    protected open val logger: (priority: LogPriority, message: String?, e: Throwable?) -> Unit
 ) : MiraiLoggerPlatformBase() {
 
-    enum class LogPriority {
-        VERBOSE,
-        DEBUG,
-        INFO,
-        WARNING,
-        ERROR
+    public enum class LogPriority(
+        @MiraiExperimentalAPI public val nameAligned: String,
+        public val simpleName: String,
+        @MiraiExperimentalAPI public val correspondingFunction: MiraiLogger.(message: String?, e: Throwable?) -> Unit
+    ) {
+        VERBOSE("VERBOSE", "V", MiraiLogger::verbose),
+        DEBUG(" DEBUG ", "D", MiraiLogger::debug),
+        INFO("  INFO ", "I", MiraiLogger::info),
+        WARNING("WARNING", "W", MiraiLogger::warning),
+        ERROR(" ERROR ", "E", MiraiLogger::error)
     }
 
-    companion object {
-        inline operator fun invoke(crossinline logger: (message: String?, e: Throwable?) -> Unit): SimpleLogger =
+    public companion object {
+        public inline operator fun invoke(crossinline logger: (message: String?, e: Throwable?) -> Unit): SimpleLogger =
             SimpleLogger(null, logger)
 
-        inline operator fun invoke(
+        public inline operator fun invoke(
             identity: String?,
             crossinline logger: (message: String?, e: Throwable?) -> Unit
         ): SimpleLogger =
@@ -253,20 +284,20 @@ class SimpleLogger(
                 logger(message, e)
             }
 
-        operator fun invoke(logger: (priority: LogPriority, message: String?, e: Throwable?) -> Unit): SimpleLogger =
+        public operator fun invoke(logger: (priority: LogPriority, message: String?, e: Throwable?) -> Unit): SimpleLogger =
             SimpleLogger(null, logger)
     }
 
-    override fun verbose0(message: String?) = logger(LogPriority.VERBOSE, message, null)
-    override fun verbose0(message: String?, e: Throwable?) = logger(LogPriority.VERBOSE, message, e)
-    override fun debug0(message: String?) = logger(LogPriority.DEBUG, message, null)
-    override fun debug0(message: String?, e: Throwable?) = logger(LogPriority.DEBUG, message, e)
-    override fun info0(message: String?) = logger(LogPriority.INFO, message, null)
-    override fun info0(message: String?, e: Throwable?) = logger(LogPriority.INFO, message, e)
-    override fun warning0(message: String?) = logger(LogPriority.WARNING, message, null)
-    override fun warning0(message: String?, e: Throwable?) = logger(LogPriority.WARNING, message, e)
-    override fun error0(message: String?) = logger(LogPriority.ERROR, message, null)
-    override fun error0(message: String?, e: Throwable?) = logger(LogPriority.ERROR, message, e)
+    public override fun verbose0(message: String?): Unit = logger(LogPriority.VERBOSE, message, null)
+    public override fun verbose0(message: String?, e: Throwable?): Unit = logger(LogPriority.VERBOSE, message, e)
+    public override fun debug0(message: String?): Unit = logger(LogPriority.DEBUG, message, null)
+    public override fun debug0(message: String?, e: Throwable?): Unit = logger(LogPriority.DEBUG, message, e)
+    public override fun info0(message: String?): Unit = logger(LogPriority.INFO, message, null)
+    public override fun info0(message: String?, e: Throwable?): Unit = logger(LogPriority.INFO, message, e)
+    public override fun warning0(message: String?): Unit = logger(LogPriority.WARNING, message, null)
+    public override fun warning0(message: String?, e: Throwable?): Unit = logger(LogPriority.WARNING, message, e)
+    public override fun error0(message: String?): Unit = logger(LogPriority.ERROR, message, null)
+    public override fun error0(message: String?, e: Throwable?): Unit = logger(LogPriority.ERROR, message, e)
 }
 
 /**
@@ -276,9 +307,9 @@ class SimpleLogger(
  * @see disable 关闭
  */
 @Suppress("MemberVisibilityCanBePrivate")
-class MiraiLoggerWithSwitch internal constructor(private val delegate: MiraiLogger, default: Boolean) :
+public class MiraiLoggerWithSwitch internal constructor(private val delegate: MiraiLogger, default: Boolean) :
     MiraiLoggerPlatformBase() {
-    override val identity: String? get() = delegate.identity
+    public override val identity: String? get() = delegate.identity
 
     /**
      * true 为开启.
@@ -286,116 +317,119 @@ class MiraiLoggerWithSwitch internal constructor(private val delegate: MiraiLogg
     @PublishedApi
     internal var switch: Boolean = default
 
-    override val isEnabled: Boolean get() = switch
+    public override val isEnabled: Boolean get() = switch
 
-    fun enable() {
+    public fun enable() {
         switch = true
     }
 
-    fun disable() {
+    public fun disable() {
         switch = false
     }
 
-    override fun verbose0(message: String?) = delegate.verbose(message)
-    override fun verbose0(message: String?, e: Throwable?) = delegate.verbose(message, e)
-    override fun debug0(message: String?) = delegate.debug(message)
-    override fun debug0(message: String?, e: Throwable?) = delegate.debug(message, e)
-    override fun info0(message: String?) = delegate.info(message)
-    override fun info0(message: String?, e: Throwable?) = delegate.info(message, e)
-    override fun warning0(message: String?) = delegate.warning(message)
-    override fun warning0(message: String?, e: Throwable?) = delegate.warning(message, e)
-    override fun error0(message: String?) = delegate.error(message)
-    override fun error0(message: String?, e: Throwable?) = delegate.error(message, e)
+    public override fun verbose0(message: String?): Unit = delegate.verbose(message)
+    public override fun verbose0(message: String?, e: Throwable?): Unit = delegate.verbose(message, e)
+    public override fun debug0(message: String?): Unit = delegate.debug(message)
+    public override fun debug0(message: String?, e: Throwable?): Unit = delegate.debug(message, e)
+    public override fun info0(message: String?): Unit = delegate.info(message)
+    public override fun info0(message: String?, e: Throwable?): Unit = delegate.info(message, e)
+    public override fun warning0(message: String?): Unit = delegate.warning(message)
+    public override fun warning0(message: String?, e: Throwable?): Unit = delegate.warning(message, e)
+    public override fun error0(message: String?): Unit = delegate.error(message)
+    public override fun error0(message: String?, e: Throwable?): Unit = delegate.error(message, e)
 }
 
 /**
  * 日志基类. 实现了 [follower] 的调用传递.
- * 若 Mirai 自带的日志系统无法满足需求, 请继承这个类并实现其抽象函数.
+ * 若 Mirai 自带的日志系统无法满足需求, 请继承这个类或 [PlatformLogger] 并实现其抽象函数.
  *
  * 这个类不应该被用作变量的类型定义. 只应被作为继承对象.
  * 在定义 logger 变量时, 请一直使用 [MiraiLogger] 或者 [MiraiLoggerWithSwitch].
+ *
+ * @see PlatformLogger
+ * @see SimpleLogger
  */
-abstract class MiraiLoggerPlatformBase : MiraiLogger {
-    override val isEnabled: Boolean get() = true
-    final override var follower: MiraiLogger? = null
+public abstract class MiraiLoggerPlatformBase : MiraiLogger {
+    public override val isEnabled: Boolean get() = true
+    public final override var follower: MiraiLogger? = null
 
-    final override fun verbose(message: String?) {
+    public final override fun verbose(message: String?) {
         if (!isEnabled) return
         follower?.verbose(message)
         verbose0(message)
     }
 
-    final override fun verbose(message: String?, e: Throwable?) {
+    public final override fun verbose(message: String?, e: Throwable?) {
         if (!isEnabled) return
         follower?.verbose(message, e)
         verbose0(message, e)
     }
 
-    final override fun debug(message: String?) {
+    public final override fun debug(message: String?) {
         if (!isEnabled) return
         follower?.debug(message)
         debug0(message)
     }
 
-    final override fun debug(message: String?, e: Throwable?) {
+    public final override fun debug(message: String?, e: Throwable?) {
         if (!isEnabled) return
         follower?.debug(message, e)
         debug0(message, e)
     }
 
-    final override fun info(message: String?) {
+    public final override fun info(message: String?) {
         if (!isEnabled) return
         follower?.info(message)
         info0(message)
     }
 
-    final override fun info(message: String?, e: Throwable?) {
+    public final override fun info(message: String?, e: Throwable?) {
         if (!isEnabled) return
         follower?.info(message, e)
         info0(message, e)
     }
 
-    final override fun warning(message: String?) {
+    public final override fun warning(message: String?) {
         if (!isEnabled) return
         follower?.warning(message)
         warning0(message)
     }
 
-    final override fun warning(message: String?, e: Throwable?) {
+    public final override fun warning(message: String?, e: Throwable?) {
         if (!isEnabled) return
         follower?.warning(message, e)
         warning0(message, e)
     }
 
-    final override fun error(message: String?) {
+    public final override fun error(message: String?) {
         if (!isEnabled) return
         follower?.error(message)
         error0(message)
     }
 
-    final override fun error(message: String?, e: Throwable?) {
+    public final override fun error(message: String?, e: Throwable?) {
         if (!isEnabled) return
         follower?.error(message, e)
         error0(message, e)
     }
 
-    protected abstract fun verbose0(message: String?)
+    protected open fun verbose0(message: String?): Unit = verbose0(message, null)
     protected abstract fun verbose0(message: String?, e: Throwable?)
-    protected abstract fun debug0(message: String?)
+    protected open fun debug0(message: String?): Unit = debug0(message, null)
     protected abstract fun debug0(message: String?, e: Throwable?)
-    protected abstract fun info0(message: String?)
+    protected open fun info0(message: String?): Unit = info0(message, null)
     protected abstract fun info0(message: String?, e: Throwable?)
-    protected abstract fun warning0(message: String?)
+    protected open fun warning0(message: String?): Unit = warning0(message, null)
     protected abstract fun warning0(message: String?, e: Throwable?)
-    protected abstract fun error0(message: String?)
+    protected open fun error0(message: String?): Unit = error0(message, null)
     protected abstract fun error0(message: String?, e: Throwable?)
 
-    override operator fun <T : MiraiLogger> plus(follower: T): T {
+    public override operator fun <T : MiraiLogger> plus(follower: T): T {
         this.follower = follower
         return follower
     }
 
-    override fun plusAssign(follower: MiraiLogger) =
+    public override fun plusAssign(follower: MiraiLogger): Unit =
         if (this.follower == null) this.follower = follower
         else this.follower!! += follower
 }

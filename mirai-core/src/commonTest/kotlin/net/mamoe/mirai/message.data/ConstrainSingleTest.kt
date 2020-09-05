@@ -1,21 +1,20 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
 
 package net.mamoe.mirai.message.data
 
-import net.mamoe.mirai.utils.MiraiExperimentalAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 
-@OptIn(MiraiExperimentalAPI::class)
 internal class TestConstrainSingleMessage : ConstrainSingle<TestConstrainSingleMessage>, Any() {
     companion object Key : Message.Key<TestConstrainSingleMessage> {
         override val typeName: String
@@ -24,38 +23,78 @@ internal class TestConstrainSingleMessage : ConstrainSingle<TestConstrainSingleM
 
     override fun toString(): String = "<TestConstrainSingleMessage#${super.hashCode()}>"
 
-    override fun contentToString(): String {
-        TODO("Not yet implemented")
-    }
-
     override val key: Message.Key<TestConstrainSingleMessage>
         get() = Key
-    override val length: Int
-        get() = TODO("Not yet implemented")
-
-    override fun get(index: Int): Char {
-        TODO("Not yet implemented")
-    }
-
-    override fun subSequence(startIndex: Int, endIndex: Int): CharSequence {
-        TODO("Not yet implemented")
-    }
-
-    override fun compareTo(other: String): Int {
-        TODO("Not yet implemented")
-    }
 }
+
 
 internal class ConstrainSingleTest {
 
-    @OptIn(MiraiExperimentalAPI::class)
-    @Test
-    fun testConstrainSingleInPlus() {
-        val new = TestConstrainSingleMessage()
-        val combined = (TestConstrainSingleMessage() + new) as CombinedMessage
 
-        assertEquals(combined.left, EmptyMessageChain)
-        assertSame(combined.tail, new)
+    @Test
+    fun testCombine() {
+        val result = PlainText("te") + PlainText("st")
+        assertTrue(result is CombinedMessage)
+        assertEquals("te", result.left.contentToString())
+        assertEquals("st", result.tail.contentToString())
+        assertEquals(2, result.size)
+        assertEquals("test", result.contentToString())
+    }
+
+    @Test
+    fun testSinglePlusChain() {
+        val result = PlainText("te") + buildMessageChain {
+            add(TestConstrainSingleMessage())
+            add("st")
+        }
+        assertEquals(3, result.size)
+        assertEquals(result.contentToString(), "test")
+    }
+
+    @Test
+    fun testSinglePlusChainConstrain() {
+        val chain = buildMessageChain {
+            add(TestConstrainSingleMessage())
+            add("st")
+        }
+        val result = TestConstrainSingleMessage() + chain
+        assertSame(chain, result)
+        assertEquals(2, result.size)
+        assertEquals(result.contentToString(), "st")
+        assertTrue { result.first() is TestConstrainSingleMessage }
+    }
+
+    @Test
+    fun testSinglePlusSingle() {
+        val new = TestConstrainSingleMessage()
+        val combined = (TestConstrainSingleMessage() + new)
+
+        assertTrue(combined is SingleMessageChainImpl)
+        assertSame(new, combined.delegate)
+    }
+
+    @Test
+    fun testChainPlusSingle() {
+        val new = TestConstrainSingleMessage()
+
+        val result = buildMessageChain {
+            add(" ")
+            add(Face(Face.hao))
+            add(TestConstrainSingleMessage())
+            add(
+                PlainText("ss")
+                        + " "
+            )
+        } + buildMessageChain {
+            add(PlainText("p "))
+            add(new)
+            add(PlainText("test"))
+        }
+
+        assertEquals(7, result.size)
+        assertEquals(" [OK]ss p test", result.contentToString())
+        result as MessageChainImplByCollection
+        assertSame(new, result.delegate.toTypedArray()[2])
     }
 
     @Test // net.mamoe.mirai/message/data/MessageChain.kt:441

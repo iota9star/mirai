@@ -1,16 +1,22 @@
+/*
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
+ *
+ * https://github.com/mamoe/mirai/blob/master/LICENSE
+ */
+
 package net.mamoe.mirai
 
 import kotlinx.coroutines.*
-import net.mamoe.mirai.contact.PermissionDeniedException
 import net.mamoe.mirai.contact.recall
-import net.mamoe.mirai.data.AddFriendResult
 import net.mamoe.mirai.message.MessageReceipt
 import net.mamoe.mirai.message.data.Image
 import net.mamoe.mirai.message.data.MessageChain
 import net.mamoe.mirai.message.data.MessageSource
+import net.mamoe.mirai.message.data.queryUrl
 import net.mamoe.mirai.network.LoginFailedException
-import net.mamoe.mirai.utils.MiraiExperimentalAPI
-import net.mamoe.mirai.utils.MiraiInternalAPI
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -18,21 +24,8 @@ import java.util.concurrent.TimeoutException
 /**
  * [Bot] 中为了让 Java 使用者调用更方便的 API 列表.
  */
-@MiraiInternalAPI
 @Suppress("FunctionName", "INAPPLICABLE_JVM_NAME", "unused")
-actual abstract class BotJavaFriendlyAPI actual constructor() {
-    init {
-        @Suppress("LeakingThis")
-        assert(this is Bot)
-    }
-
-    private inline fun <R> runBlocking(crossinline block: suspend Bot.() -> R): R {
-        return kotlinx.coroutines.runBlocking { block(this@BotJavaFriendlyAPI as Bot) }
-    }
-
-    private inline fun <R> future(crossinline block: suspend Bot.() -> R): Future<R> {
-        return (this as Bot).run { future { block() } }
-    }
+internal actual interface BotJavaFriendlyAPI {
 
     /**
      * 登录, 或重新登录.
@@ -40,10 +33,11 @@ actual abstract class BotJavaFriendlyAPI actual constructor() {
      *
      * 一般情况下不需要重新登录. Mirai 能够自动处理掉线情况.
      *
-     * 最终调用 [net.mamoe.mirai.network.BotNetworkHandler.relogin]
+     * 最终调用 [net.mamoe.mirai.network.BotNetworkHandler.closeEverythingAndRelogin]
      *
      * @throws LoginFailedException
      */
+    @Throws(LoginFailedException::class)
     @JvmName("login")
     fun __loginBlockingForJava__() {
         runBlocking { login() }
@@ -109,7 +103,7 @@ actual abstract class BotJavaFriendlyAPI actual constructor() {
      */
     @JvmName("queryImageUrl")
     fun __queryImageUrlBlockingForJava__(image: Image): String {
-        return runBlocking { queryImageUrl(image) }
+        return runBlocking { image.queryUrl() }
     }
 
     /**
@@ -118,23 +112,6 @@ actual abstract class BotJavaFriendlyAPI actual constructor() {
     @JvmName("join")
     fun __joinBlockingForJava__() {
         runBlocking { join() }
-    }
-
-    /**
-     * 添加一个好友
-     *
-     * @param message 若需要验证请求时的验证消息.
-     * @param remark 好友备注
-     */
-    @OptIn(MiraiExperimentalAPI::class)
-    @JvmName("addFriend")
-    fun __addFriendBlockingForJava__(
-        id: Long,
-        message: String? = null,
-        remark: String? = null
-    ): AddFriendResult {
-        @OptIn(MiraiExperimentalAPI::class)
-        return runBlocking { addFriend(id, message, remark) }
     }
 
     /**
@@ -166,8 +143,16 @@ actual abstract class BotJavaFriendlyAPI actual constructor() {
      */
     @JvmName("queryImageUrlAsync")
     fun __queryImageUrlAsyncForJava__(image: Image): Future<String> {
-        return future { queryImageUrl(image) }
+        return future { image.queryUrl() }
     }
+}
+
+private inline fun <R> BotJavaFriendlyAPI.future(crossinline block: suspend Bot.() -> R): Future<R> {
+    return (this as CoroutineScope).run { future { block(this as Bot) } }
+}
+
+private inline fun <R> BotJavaFriendlyAPI.runBlocking(crossinline block: suspend Bot.() -> R): R {
+    return kotlinx.coroutines.runBlocking { block(this@runBlocking as Bot) }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

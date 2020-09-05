@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -20,6 +20,7 @@ import net.mamoe.mirai.qqandroid.network.protocol.data.proto.MsgSvc
 import net.mamoe.mirai.qqandroid.network.protocol.packet.OutgoingPacket
 import net.mamoe.mirai.qqandroid.network.protocol.packet.OutgoingPacketFactory
 import net.mamoe.mirai.qqandroid.network.protocol.packet.buildOutgoingUniPacket
+import net.mamoe.mirai.qqandroid.utils.hexToBytes
 import net.mamoe.mirai.qqandroid.utils.io.serialization.readProtoBuf
 import net.mamoe.mirai.qqandroid.utils.io.serialization.toByteArray
 import net.mamoe.mirai.qqandroid.utils.io.serialization.writeProtoBuf
@@ -73,6 +74,42 @@ internal class PbMessageSvc {
             )
         }
 
+        fun createForTempMessage(
+            client: QQAndroidClient,
+            groupUin: Long,
+            toUin: Long,
+            messageSequenceId: Int, // 56639
+            messageRandom: Int, // 921878719
+            time: Int
+        ): OutgoingPacket = buildOutgoingUniPacket(client) {
+            writeProtoBuf(
+                MsgSvc.PbMsgWithDrawReq.serializer(),
+                MsgSvc.PbMsgWithDrawReq(
+                    c2cWithDraw = listOf(
+                        MsgSvc.PbC2CMsgWithDrawReq(
+                            subCmd = 1,
+                            msgInfo = listOf(
+                                MsgSvc.PbC2CMsgWithDrawReq.MsgInfo(
+                                    fromUin = client.bot.id,
+                                    toUin = toUin,
+                                    msgSeq = messageSequenceId,
+                                    msgRandom = messageRandom,
+                                    msgUid = 0x0100000000000000 or (messageRandom.toLong() and 0xFFFFFFFF),
+                                    msgTime = time.toLong(),
+                                    routingHead = MsgSvc.RoutingHead(
+                                        grpTmp = MsgSvc.GrpTmp(groupUin, toUin)
+                                    )
+                                )
+                            ),
+                            reserved = RESERVED_TEMP
+                        )
+                    )
+                )
+            )
+        }
+
+        private val RESERVED_TEMP = "08 01 10 E3 E9 D6 80 02".hexToBytes()
+
         fun createForFriendMessage(
             client: QQAndroidClient,
             toUin: Long,
@@ -91,7 +128,8 @@ internal class PbMessageSvc {
                                     fromUin = client.bot.id,
                                     toUin = toUin,
                                     msgSeq = messageSequenceId,
-                                    msgUid = 1000000000000000000L or messageRandom.toULong().toLong(),
+                                    msgRandom = messageRandom,
+                                    msgUid = 0x0100000000000000 or (messageRandom.toLong() and 0xFFFFFFFF),
                                     msgTime = time.toLong(),
                                     routingHead = MsgSvc.RoutingHead(
                                         c2c = MsgSvc.C2C(
@@ -99,7 +137,8 @@ internal class PbMessageSvc {
                                         )
                                     )
                                 )
-                            )
+                            ),
+                            reserved = byteArrayOf(0x08, 0x00)
                         )
                     )
                 )
@@ -115,7 +154,7 @@ internal class PbMessageSvc {
                 return Response.Success
             }
             resp.c2cWithDraw?.firstOrNull()?.let {
-                if (it.result != 0) {
+                if (it.result != 2 && it.result != 3) {
                     return Response.Failed(it.result, it.errmsg)
                 }
                 return Response.Success

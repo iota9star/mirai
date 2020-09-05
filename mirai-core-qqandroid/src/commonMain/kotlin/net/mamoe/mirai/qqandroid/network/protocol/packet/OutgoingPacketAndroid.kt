@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -15,7 +15,6 @@ import kotlinx.io.core.ByteReadPacket
 import kotlinx.io.core.buildPacket
 import kotlinx.io.core.writeFully
 import net.mamoe.mirai.qqandroid.network.QQAndroidClient
-import net.mamoe.mirai.utils.MiraiInternalAPI
 import net.mamoe.mirai.qqandroid.utils.io.encryptAndWrite
 import net.mamoe.mirai.qqandroid.utils.io.writeHex
 import net.mamoe.mirai.qqandroid.utils.io.writeIntLVPacket
@@ -35,7 +34,6 @@ internal val KEY_16_ZEROS = ByteArray(16)
 internal val EMPTY_BYTE_ARRAY = ByteArray(0)
 
 @Suppress("DuplicatedCode")
-@OptIn(MiraiInternalAPI::class)
 internal inline fun OutgoingPacketFactory<*>.buildOutgoingUniPacket(
     client: QQAndroidClient,
     bodyType: Byte = 1, // 1: PB?
@@ -67,7 +65,6 @@ internal inline fun OutgoingPacketFactory<*>.buildOutgoingUniPacket(
 }
 
 
-@OptIn(MiraiInternalAPI::class)
 internal inline fun IncomingPacketFactory<*>.buildResponseUniPacket(
     client: QQAndroidClient,
     bodyType: Byte = 1, // 1: PB?
@@ -98,8 +95,8 @@ internal inline fun IncomingPacketFactory<*>.buildResponseUniPacket(
     })
 }
 
-@OptIn(MiraiInternalAPI::class)
-internal inline fun BytePacketBuilder.writeUniPacket(
+
+private inline fun BytePacketBuilder.writeUniPacket(
     commandName: String,
     unknownData: ByteArray,
     extraData: ByteReadPacket = BRP_STUB,
@@ -131,7 +128,6 @@ internal val NO_ENCRYPT: ByteArray = ByteArray(0)
 /**
  * com.tencent.qphone.base.util.CodecWarpper#encodeRequest(int, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, byte[], int, int, java.lang.String, byte, byte, byte, byte[], byte[], boolean)
  */
-@OptIn(MiraiInternalAPI::class)
 internal inline fun OutgoingPacketFactory<*>.buildLoginOutgoingPacket(
     client: QQAndroidClient,
     bodyType: Byte,
@@ -169,7 +165,7 @@ internal inline fun OutgoingPacketFactory<*>.buildLoginOutgoingPacket(
 
 private inline val BRP_STUB get() = ByteReadPacket.Empty
 
-@OptIn(MiraiInternalAPI::class)
+
 internal inline fun BytePacketBuilder.writeSsoPacket(
     client: QQAndroidClient,
     subAppId: Long,
@@ -235,7 +231,6 @@ internal inline fun BytePacketBuilder.writeSsoPacket(
     writeIntLVPacket(lengthOffset = { it + 4 }, builder = body)
 }
 
-@OptIn(ExperimentalUnsignedTypes::class, MiraiInternalAPI::class)
 internal fun BytePacketBuilder.writeOicqRequestPacket(
     client: QQAndroidClient,
     encryptMethod: EncryptMethod,

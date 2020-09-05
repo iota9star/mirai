@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -12,7 +12,8 @@
 package net.mamoe.mirai.qqandroid.network.protocol.packet.chat
 
 import kotlinx.io.core.ByteReadPacket
-import net.mamoe.mirai.message.data.MessageChain
+import net.mamoe.mirai.message.data.ForwardMessage
+import net.mamoe.mirai.message.data.asMessageChain
 import net.mamoe.mirai.qqandroid.QQAndroidBot
 import net.mamoe.mirai.qqandroid.message.toRichTextElems
 import net.mamoe.mirai.qqandroid.network.Packet
@@ -30,9 +31,8 @@ import net.mamoe.mirai.qqandroid.utils._miraiContentToString
 import net.mamoe.mirai.qqandroid.utils.io.serialization.readProtoBuf
 import net.mamoe.mirai.qqandroid.utils.io.serialization.toByteArray
 import net.mamoe.mirai.qqandroid.utils.io.serialization.writeProtoBuf
-import net.mamoe.mirai.utils.MiraiInternalAPI
 
-internal class MessageValidationData @OptIn(MiraiInternalAPI::class) constructor(
+internal class MessageValidationData(
     val data: ByteArray,
     val md5: ByteArray = MiraiPlatformUtils.md5(data)
 ) {
@@ -41,40 +41,45 @@ internal class MessageValidationData @OptIn(MiraiInternalAPI::class) constructor
     }
 }
 
-@OptIn(MiraiInternalAPI::class)
-internal fun MessageChain.calculateValidationDataForGroup(
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun Int.toLongUnsigned(): Long = this.toLong().and(0xFFFF_FFFF)
+internal fun Collection<ForwardMessage.INode>.calculateValidationDataForGroup(
     sequenceId: Int,
-    time: Int,
-    random: UInt,
-    groupCode: Long,
-    botMemberNameCard: String
+    random: Int,
+    groupCode: Long
 ): MessageValidationData {
-    val richTextElems = this.toRichTextElems(forGroup = true, withGeneralFlags = false)
-
-    val msgTransmit = MsgTransmit.PbMultiMsgTransmit(
-        msg = listOf(
-            MsgComm.Msg(
-                msgHead = MsgComm.MsgHead(
-                    fromUin = 1040400290,
-                    msgSeq = sequenceId,
-                    msgTime = time,
-                    msgUid = 0x01000000000000000L or random.toLong(),
-                    mutiltransHead = MsgComm.MutilTransHead(
-                        status = 0,
-                        msgId = 1
-                    ),
-                    msgType = 82, // troop
-                    groupInfo = MsgComm.GroupInfo(
-                        groupCode = groupCode,
-                        groupCard = botMemberNameCard // Cinnamon
-                    ),
-                    isSrcMsg = false
+    val msgList = map { chain ->
+        MsgComm.Msg(
+            msgHead = MsgComm.MsgHead(
+                fromUin = chain.senderId,
+                msgSeq = sequenceId,
+                msgTime = chain.time,
+                msgUid = 0x01000000000000000L or random.toLongUnsigned(),
+                mutiltransHead = MsgComm.MutilTransHead(
+                    status = 0,
+                    msgId = 1
                 ),
-                msgBody = ImMsgBody.MsgBody(
-                    richText = ImMsgBody.RichText(
-                        elems = richTextElems.toMutableList()
-                    )
+                msgType = 82, // troop
+                groupInfo = MsgComm.GroupInfo(
+                    groupCode = groupCode,
+                    groupCard = chain.senderName // Cinnamon
+                ),
+                isSrcMsg = false
+            ),
+            msgBody = ImMsgBody.MsgBody(
+                richText = ImMsgBody.RichText(
+                    elems = chain.message.asMessageChain()
+                        .toRichTextElems(forGroup = true, withGeneralFlags = false).toMutableList()
                 )
+            )
+        )
+    }
+    val msgTransmit = MsgTransmit.PbMultiMsgTransmit(
+        msg = msgList,
+        pbItemList = listOf(
+            MsgTransmit.PbMultiMsgItem(
+                fileName = "MultiMsg",
+                buffer = MsgTransmit.PbMultiMsgNew(msgList).toByteArray(MsgTransmit.PbMultiMsgNew.serializer())
             )
         )
     )
@@ -104,6 +109,7 @@ internal class MultiMsg {
 
         // captured from group
         fun createForGroupLongMessage(
+            buType: Int,
             client: QQAndroidClient,
             messageData: MessageValidationData,
             dstUin: Long // group uin
@@ -111,7 +117,7 @@ internal class MultiMsg {
             writeProtoBuf(
                 MultiMsg.ReqBody.serializer(),
                 MultiMsg.ReqBody(
-                    buType = 1,
+                    buType = buType, // 1: long, 2: 合并转发
                     buildVer = "8.2.0.1296",
                     multimsgApplyupReq = listOf(
                         MultiMsg.MultiMsgApplyUpReq(

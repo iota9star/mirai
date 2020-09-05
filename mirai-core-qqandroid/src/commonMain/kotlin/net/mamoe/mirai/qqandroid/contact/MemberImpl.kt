@@ -1,90 +1,117 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
  * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
 
-@file:Suppress("EXPERIMENTAL_API_USAGE")
+@file:Suppress("EXPERIMENTAL_API_USAGE", "DEPRECATION_ERROR", "INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
 
 package net.mamoe.mirai.qqandroid.contact
 
-import kotlinx.coroutines.launch
+import kotlinx.atomicfu.AtomicInt
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.*
 import net.mamoe.mirai.LowLevelAPI
 import net.mamoe.mirai.contact.*
-import net.mamoe.mirai.data.FriendNameRemark
 import net.mamoe.mirai.data.MemberInfo
-import net.mamoe.mirai.data.PreviousNameList
-import net.mamoe.mirai.data.Profile
 import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.*
 import net.mamoe.mirai.message.MessageReceipt
-import net.mamoe.mirai.message.data.Message
-import net.mamoe.mirai.message.data.OfflineFriendImage
-import net.mamoe.mirai.message.data.QuoteReply
-import net.mamoe.mirai.message.data.asMessageChain
+import net.mamoe.mirai.message.data.*
 import net.mamoe.mirai.qqandroid.QQAndroidBot
-import net.mamoe.mirai.qqandroid.message.MessageSourceToFriendImpl
+import net.mamoe.mirai.qqandroid.message.MessageSourceToTempImpl
 import net.mamoe.mirai.qqandroid.message.ensureSequenceIdAvailable
 import net.mamoe.mirai.qqandroid.message.firstIsInstanceOrNull
 import net.mamoe.mirai.qqandroid.network.protocol.data.jce.StTroopMemberInfo
 import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.TroopManagement
-import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.MessageSvc
-import net.mamoe.mirai.utils.*
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.MessageSvcPbSendMsg
+import net.mamoe.mirai.qqandroid.network.protocol.packet.chat.receive.createToTemp
+import net.mamoe.mirai.utils.ExternalImage
+import net.mamoe.mirai.utils.currentTimeSeconds
+import net.mamoe.mirai.utils.getValue
+import net.mamoe.mirai.utils.unsafeWeakRef
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.contract
 import kotlin.coroutines.CoroutineContext
 import kotlin.jvm.JvmSynthetic
 
 @OptIn(LowLevelAPI::class)
 @Suppress("MemberVisibilityCanBePrivate")
 internal class MemberImpl constructor(
-    val qq: QQImpl, // 不要 WeakRef
+    val qq: FriendImpl, // 不要 WeakRef
     group: GroupImpl,
-    override val coroutineContext: CoroutineContext,
+    coroutineContext: CoroutineContext,
     memberInfo: MemberInfo
 ) : Member() {
     override val group: GroupImpl by group.unsafeWeakRef()
+    override val coroutineContext: CoroutineContext = coroutineContext + SupervisorJob(coroutineContext[Job])
 
-    // region QQ delegate
+    @Suppress("unused") // false positive
+    val lastMessageSequence: AtomicInt = atomic(-1)
+
     override val id: Long = qq.id
     override val nick: String = qq.nick
 
-    @MiraiExperimentalAPI
-    override suspend fun queryProfile(): Profile = qq.queryProfile()
-
-    @MiraiExperimentalAPI
-    override suspend fun queryPreviousNameList(): PreviousNameList = qq.queryPreviousNameList()
-
-    @MiraiExperimentalAPI
-    override suspend fun queryRemark(): FriendNameRemark = qq.queryRemark()
-
+    @Suppress("UNCHECKED_CAST")
     @JvmSynthetic
-    @Suppress("DuplicatedCode")
     override suspend fun sendMessage(message: Message): MessageReceipt<Member> {
-        val event = MessageSendEvent.FriendMessageSendEvent(this, message.asMessageChain()).broadcast()
-        if (event.isCancelled) {
-            throw EventCancelledException("cancelled by FriendMessageSendEvent")
+        require(message.isContentNotEmpty()) { "message is empty" }
+
+        val asFriend = this.asFriendOrNull()
+
+        return (asFriend?.sendMessageImpl(
+            message,
+            friendReceiptConstructor = { MessageReceipt(it, asFriend, null) },
+            tReceiptConstructor = { MessageReceipt(it, this, null) }
+        ) ?: sendMessageImpl(message)).also { logMessageSent(message) }
+    }
+
+    private suspend fun sendMessageImpl(message: Message): MessageReceipt<Member> {
+        val chain = kotlin.runCatching {
+            TempMessagePreSendEvent(this, message).broadcast()
+        }.onSuccess {
+            check(!it.isCancelled) {
+                throw EventCancelledException("cancelled by TempMessagePreSendEvent")
+            }
+        }.getOrElse {
+            throw EventCancelledException("exception thrown when broadcasting TempMessagePreSendEvent", it)
+        }.message.asMessageChain()
+
+        chain.firstIsInstanceOrNull<QuoteReply>()?.source?.ensureSequenceIdAvailable()
+
+        val result = bot.network.runCatching {
+            val source: MessageSourceToTempImpl
+            MessageSvcPbSendMsg.createToTemp(
+                bot.client,
+                this@MemberImpl,
+                chain
+            ) {
+                source = it
+            }.sendAndExpect<MessageSvcPbSendMsg.Response>().let {
+                check(it is MessageSvcPbSendMsg.Response.SUCCESS) {
+                    "Send temp message failed: $it"
+                }
+            }
+            MessageReceipt(source, this@MemberImpl, null)
         }
-        lateinit var source: MessageSourceToFriendImpl
-        event.message.firstIsInstanceOrNull<QuoteReply>()?.source?.ensureSequenceIdAvailable()
-        bot.network.run {
-            check(
-                MessageSvc.PbSendMsg.createToFriend(
-                    bot.client,
-                    this@MemberImpl,
-                    event.message
-                ) {
-                    source = it
-                }.sendAndExpect<MessageSvc.PbSendMsg.Response>() is MessageSvc.PbSendMsg.Response.SUCCESS
-            ) { "send message failed" }
-        }
-        return MessageReceipt(source, this, null)
+
+        result.fold(
+            onSuccess = {
+                TempMessagePostSendEvent(this, chain, null, it)
+            },
+            onFailure = {
+                TempMessagePostSendEvent(this, chain, it, null)
+            }
+        ).broadcast()
+
+        return result.getOrThrow()
     }
 
     @JvmSynthetic
-    override suspend fun uploadImage(image: ExternalImage): OfflineFriendImage = qq.uploadImage(image)
-    // endregion
+    override suspend fun uploadImage(image: ExternalImage): Image = qq.uploadImage(image)
 
     override var permission: MemberPermission = memberInfo.permission
 
@@ -97,17 +124,19 @@ internal class MemberImpl constructor(
     @Suppress("PropertyName")
     var _muteTimestamp: Int = memberInfo.muteTimestamp
 
-    override val muteTimeRemaining: Int =
-        if (_muteTimestamp == 0 || _muteTimestamp == 0xFFFFFFFF.toInt()) {
+    override val muteTimeRemaining: Int
+        get() = if (_muteTimestamp == 0 || _muteTimestamp == 0xFFFFFFFF.toInt()) {
             0
         } else {
-            _muteTimestamp - currentTimeSeconds.toInt() - bot.client.timeDifference.toInt()
+            (_muteTimestamp - currentTimeSeconds.toInt()).coerceAtLeast(0)
         }
 
     override var nameCard: String
         get() = _nameCard
         set(newValue) {
-            group.checkBotPermissionOperator()
+            if (id != bot.id) {
+                group.checkBotPermission(MemberPermission.ADMINISTRATOR)
+            }
             if (_nameCard != newValue) {
                 val oldValue = _nameCard
                 _nameCard = newValue
@@ -119,7 +148,7 @@ internal class MemberImpl constructor(
                             newValue
                         ).sendWithoutExpect()
                     }
-                    MemberCardChangeEvent(oldValue, newValue, this@MemberImpl, null).broadcast()
+                    MemberCardChangeEvent(oldValue, newValue, this@MemberImpl).broadcast()
                 }
             }
         }
@@ -148,7 +177,10 @@ internal class MemberImpl constructor(
 
     @JvmSynthetic
     override suspend fun mute(durationSeconds: Int) {
-        checkBotPermissionHigherThanThis()
+        check(this.id != bot.id) {
+            "A bot can't mute itself."
+        }
+        checkBotPermissionHigherThanThis("mute")
         bot.network.run {
             TroopManagement.Mute(
                 client = bot.client,
@@ -162,10 +194,10 @@ internal class MemberImpl constructor(
         net.mamoe.mirai.event.events.MemberMuteEvent(this@MemberImpl, durationSeconds, null).broadcast()
     }
 
-    private fun checkBotPermissionHigherThanThis(){
+    private fun checkBotPermissionHigherThanThis(operationName: String) {
         check(group.botPermission > this.permission) {
             throw PermissionDeniedException(
-                "`kick` operation requires bot to have a higher permission than the target member, " +
+                "`$operationName` operation requires bot to have a higher permission than the target member, " +
                         "but bot's is ${group.botPermission}, target's is ${this.permission}"
             )
         }
@@ -173,7 +205,7 @@ internal class MemberImpl constructor(
 
     @JvmSynthetic
     override suspend fun unmute() {
-        checkBotPermissionHigherThanThis()
+        checkBotPermissionHigherThanThis("unmute")
         bot.network.run {
             TroopManagement.Mute(
                 client = bot.client,
@@ -187,9 +219,13 @@ internal class MemberImpl constructor(
         net.mamoe.mirai.event.events.MemberUnmuteEvent(this@MemberImpl, null).broadcast()
     }
 
+
     @JvmSynthetic
     override suspend fun kick(message: String) {
-        checkBotPermissionHigherThanThis()
+        checkBotPermissionHigherThanThis("kick")
+        check(group.members.getOrNull(this.id) != null) {
+            "Member ${this.id} had already been kicked from group ${group.id}"
+        }
         bot.network.run {
             val response: TroopManagement.Kick.Response = TroopManagement.Kick(
                 client = bot.client,
@@ -197,28 +233,23 @@ internal class MemberImpl constructor(
                 message = message
             ).sendAndExpect()
 
-            check(response.success) { "kick failed: $message" }
+            check(response.success) { "kick failed: ${response.ret}" }
 
+            @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+            group.members.delegate.removeIf { it.id == this@MemberImpl.id }
+            this@MemberImpl.cancel(CancellationException("Kicked by bot"))
             MemberLeaveEvent.Kick(this@MemberImpl, null).broadcast()
         }
     }
+}
 
-    override fun hashCode(): Int {
-        var result = bot.hashCode()
-        result = 31 * result + id.hashCode()
-        return result
+@OptIn(ExperimentalContracts::class)
+internal fun Member.checkIsMemberImpl(): MemberImpl {
+    contract {
+        returns() implies (this@checkIsMemberImpl is MemberImpl)
     }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is Contact) return false
-        if (this::class != other::class) return false
-        return this.id == other.id && this.bot == other.bot
-    }
-
-    override fun toString(): String {
-        return "Member($id)"
-    }
+    check(this is MemberImpl) { "A Member instance is not instance of MemberImpl. Don't interlace two protocol implementations together!" }
+    return this
 }
 
 @OptIn(LowLevelAPI::class)
@@ -228,7 +259,8 @@ internal class MemberInfoImpl(
 ) : MemberInfo {
     override val uin: Long = jceInfo.memberUin
     override val nameCard: String = jceInfo.sName ?: ""
-    override val nick: String = jceInfo.nick
+    internal var _nick: String = jceInfo.nick
+    override val nick: String get() = _nick
     override val permission: MemberPermission = when {
         jceInfo.memberUin == groupOwnerId -> MemberPermission.OWNER
         jceInfo.dwFlag == 1L -> MemberPermission.ADMINISTRATOR
