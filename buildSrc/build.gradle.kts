@@ -14,6 +14,8 @@ plugins {
 repositories {
     mavenLocal()
     jcenter()
+    google()
+    mavenCentral()
 }
 
 kotlin {
@@ -39,13 +41,22 @@ fun version(name: String): String {
 }
 
 dependencies {
+    val asmVersion = version("asm")
+    fun asm(module: String) = "org.ow2.asm:asm-$module:$asmVersion"
+
     fun kotlinx(id: String, version: String) = "org.jetbrains.kotlinx:kotlinx-$id:$version"
     fun ktor(id: String, version: String) = "io.ktor:ktor-$id:$version"
 
     // compileOnly(kotlin("gradle-plugin-api", "1.3.72")) // Gradle's Kotlin is 1.3.72
 
-    api("com.jfrog.bintray.gradle", "gradle-bintray-plugin", version("bintray"))
     api("com.github.jengelman.gradle.plugins", "shadow", version("shadow"))
+    api("org.jetbrains.kotlin", "kotlin-gradle-plugin", version("kotlinCompiler"))
+    api("org.jetbrains.kotlin", "kotlin-compiler-embeddable", version("kotlinCompiler"))
+    api("com.android.tools.build", "gradle", version("androidGradlePlugin"))
+    api(asm("tree"))
+    api(asm("util"))
+    api(asm("commons"))
 
     api(gradleApi())
+    api("com.googlecode.java-diff-utils:diffutils:" + version("difflib"))
 }

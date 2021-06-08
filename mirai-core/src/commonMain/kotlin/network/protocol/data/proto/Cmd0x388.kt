@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -11,8 +11,8 @@ package net.mamoe.mirai.internal.network.protocol.data.proto
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
-import net.mamoe.mirai.internal.network.protocol.packet.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.internal.utils.io.ProtoBuf
+import net.mamoe.mirai.utils.EMPTY_BYTE_ARRAY
 
 @Serializable
 internal class Cmd0x388 : ProtoBuf {
@@ -206,6 +206,13 @@ internal class TryUpImgReq(
         @ProtoNumber(6) @JvmField val fileName: String = "",
         @ProtoNumber(7) @JvmField val srcTerm: Int = 0,
         @ProtoNumber(8) @JvmField val platformType: Int = 0,
+        /**
+         * if uinType = 1 then 1 else2
+         *
+        UIN_QQ = new UINTYPE(0, 0, "UIN_QQ");
+        UIN_EMAIL = new UINTYPE(1, 1, "UIN_EMAIL");
+        UIN_MOBILE = new UINTYPE(2, 2, "UIN_MOBILE");
+         */
         @ProtoNumber(9) @JvmField val buType: Int = 0,
         @ProtoNumber(10) @JvmField val picWidth: Int = 0,
         @ProtoNumber(11) @JvmField val picHeight: Int = 0,

@@ -14,12 +14,11 @@ plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
 
-    id("kotlinx-atomicfu")
+    //id("kotlinx-atomicfu")
     id("signing")
     id("net.mamoe.kotlin-jvm-blocking-bridge")
 
     `maven-publish`
-    id("com.jfrog.bintray")
 }
 
 description = "Mirai API module"
@@ -28,9 +27,13 @@ kotlin {
     explicitApi()
 
     if (isAndroidSDKAvailable) {
-        apply(from = rootProject.file("gradle/android.gradle"))
-        android("android") {
-            publishAllLibraryVariants()
+//        apply(from = rootProject.file("gradle/android.gradle"))
+//        android("android") {
+//            publishAllLibraryVariants()
+//        }
+        jvm("android") {
+            attributes.attribute(KotlinPlatformType.attribute, KotlinPlatformType.androidJvm)
+            //   publishAllLibraryVariants()
         }
     } else {
         printAndroidNotInstalled()
@@ -47,16 +50,16 @@ kotlin {
 //    }
 
     sourceSets {
-        commonMain {
+        val commonMain by getting {
             dependencies {
                 implementation(project(":mirai-core-utils"))
-                api(kotlin("serialization"))
                 api(kotlin("reflect"))
 
                 api(`kotlinx-serialization-core`)
                 api(`kotlinx-serialization-json`)
                 implementation(`kotlinx-serialization-protobuf`)
-                api(`kotlinx-coroutines-core`)
+                api(`kotlinx-coroutines-jdk8`)
+                implementation(`jetbrains-annotations`)
                 // api(`kotlinx-coroutines-jdk8`)
 
                 api(`ktor-client-okhttp`)
@@ -75,16 +78,20 @@ kotlin {
         }
 
         if (isAndroidSDKAvailable) {
-            androidMain {
+            val androidMain by getting {
+                dependsOn(commonMain)
                 dependencies {
+                    compileOnly(`android-runtime`)
                     api1(`ktor-client-android`)
                 }
             }
         }
 
-        val jvmMain by getting
+        val jvmMain by getting {
 
-        jvmTest {
+        }
+
+        val jvmTest by getting {
             dependencies {
                 runtimeOnly(files("build/classes/kotlin/jvm/test")) // classpath is not properly set by IDE
             }
@@ -92,6 +99,20 @@ kotlin {
     }
 }
 
+if (isAndroidSDKAvailable) {
+    tasks.register("checkAndroidApiLevel") {
+        doFirst {
+            analyzes.AndroidApiLevelCheck.check(
+                buildDir.resolve("classes/kotlin/android/main"),
+                project.property("mirai.android.target.api.level")!!.toString().toInt(),
+                project
+            )
+        }
+        group = "verification"
+        this.mustRunAfter("androidMainClasses")
+    }
+    tasks.getByName("androidTest").dependsOn("checkAndroidApiLevel")
+}
 
 fun org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler.implementation1(dependencyNotation: String) =
     implementation(dependencyNotation) {
@@ -115,4 +136,5 @@ configureMppPublishing()
 
 afterEvaluate {
     project(":binary-compatibility-validator").tasks["apiBuild"].dependsOn(project(":mirai-core-api").tasks["build"])
+    project(":binary-compatibility-validator-android").tasks["apiBuild"].dependsOn(project(":mirai-core-api").tasks["build"])
 }

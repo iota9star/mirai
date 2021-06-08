@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -222,8 +222,8 @@ public inline fun MiraiLogger.error(message: () -> String?, e: Throwable?) {
 
 /**
  * 当前平台的默认的日志记录器.
- * 在 _JVM 控制台_ 端的实现为 [println]
- * 在 _Android_ 端的实现为 `android.util.Log`
+ * - 在 _JVM 控制台_ 端的实现为 [println]
+ * - 在 _Android_ 端的实现为 `android.util.Log`
  *
  *
  * 单条日志格式 (正则) 为:
@@ -234,7 +234,7 @@ public inline fun MiraiLogger.error(message: () -> String?, e: Throwable?) {
  *
  * 示例:
  * ```log
- * 2020-05-21 19:51:09 V/Bot 1994701021: Send: OidbSvc.0x88d_7
+ * 2020-05-21 19:51:09 V/Bot 123456789: Send: OidbSvc.0x88d_7
  * ```
  *
  * 日期时间格式为 `yyyy-MM-dd HH:mm:ss`,
@@ -244,14 +244,9 @@ public inline fun MiraiLogger.error(message: () -> String?, e: Throwable?) {
  * @see MiraiLogger.create
  */
 @MiraiInternalApi
-public expect open class PlatformLogger constructor(
+public expect open class PlatformLogger @JvmOverloads constructor(
     identity: String? = "Mirai",
-    output: (String) -> Unit, // TODO: 2020/11/30 review logs, currently it's just for compile
-) : MiraiLoggerPlatformBase {
-    @JvmOverloads
-    public constructor(identity: String? = "Mirai")
-}
-
+) : MiraiLoggerPlatformBase
 
 /**
  * 不做任何事情的 logger, keep silent.

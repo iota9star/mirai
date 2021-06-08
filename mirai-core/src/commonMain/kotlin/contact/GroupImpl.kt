@@ -13,20 +13,32 @@
 package net.mamoe.mirai.internal.contact
 
 import net.mamoe.mirai.LowLevelApi
+import net.mamoe.mirai.Mirai
 import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.data.GroupInfo
 import net.mamoe.mirai.data.MemberInfo
 import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.*
 import net.mamoe.mirai.internal.QQAndroidBot
-import net.mamoe.mirai.internal.message.*
-import net.mamoe.mirai.internal.network.QQAndroidBotNetworkHandler
+import net.mamoe.mirai.internal.contact.info.MemberInfoImpl
+import net.mamoe.mirai.internal.message.OfflineGroupImage
+import net.mamoe.mirai.internal.network.context.BdhSession
+import net.mamoe.mirai.internal.network.handler.NetworkHandler
+import net.mamoe.mirai.internal.network.highway.ChannelKind
 import net.mamoe.mirai.internal.network.highway.Highway
+import net.mamoe.mirai.internal.network.highway.ResourceKind.GROUP_IMAGE
+import net.mamoe.mirai.internal.network.highway.ResourceKind.GROUP_VOICE
+import net.mamoe.mirai.internal.network.highway.postPtt
+import net.mamoe.mirai.internal.network.highway.tryServersUpload
+import net.mamoe.mirai.internal.network.protocol.data.proto.Cmd0x388
+import net.mamoe.mirai.internal.network.protocol.packet.chat.TroopEssenceMsgManager
 import net.mamoe.mirai.internal.network.protocol.packet.chat.image.ImgStore
 import net.mamoe.mirai.internal.network.protocol.packet.chat.voice.PttStore
 import net.mamoe.mirai.internal.network.protocol.packet.chat.voice.voiceCodec
 import net.mamoe.mirai.internal.network.protocol.packet.list.ProfileService
 import net.mamoe.mirai.internal.utils.GroupPkgMsgParsingCache
+import net.mamoe.mirai.internal.utils.RemoteFileImpl
+import net.mamoe.mirai.internal.utils.io.serialization.toByteArray
 import net.mamoe.mirai.message.MessageReceipt
 import net.mamoe.mirai.message.data.*
 import net.mamoe.mirai.utils.*
@@ -40,9 +52,10 @@ internal fun GroupImpl.Companion.checkIsInstance(instance: Group) {
     check(instance is GroupImpl) { "group is not an instanceof GroupImpl!! DO NOT interlace two or more protocol implementations!!" }
 }
 
-internal fun Group.checkIsGroupImpl() {
+internal fun Group.checkIsGroupImpl(): GroupImpl {
     contract { returns() implies (this@checkIsGroupImpl is GroupImpl) }
     GroupImpl.checkIsInstance(this)
+    return this
 }
 
 @Suppress("PropertyName")
@@ -61,6 +74,8 @@ internal class GroupImpl(
 
     override lateinit var owner: NormalMember
     override lateinit var botAsMember: NormalMember
+
+    override val filesRoot: RemoteFile by lazy { RemoteFileImpl(this, "/") }
 
     override val members: ContactList<NormalMember> = ContactList(members.mapNotNullTo(ConcurrentLinkedQueue()) {
         if (it.uin == bot.id) {
@@ -114,9 +129,10 @@ internal class GroupImpl(
         require(!message.isContentEmpty()) { "message is empty" }
         check(!isBotMuted) { throw BotIsBeingMutedException(this) }
 
-        val chain = broadcastGroupMessagePreSendEvent(message)
+        val chain = broadcastMessagePreSendEvent(message, ::GroupMessagePreSendEvent)
 
-        val result = sendMessageImpl(message, chain, GroupMessageSendingStep.FIRST)
+        val result = GroupSendMessageHandler(this)
+            .runCatching { sendMessage(message, chain, SendMessageStep.FIRST) }
 
         // logMessageSent(result.getOrNull()?.source?.plus(chain) ?: chain) // log with source
         logMessageSent(chain)
@@ -131,13 +147,13 @@ internal class GroupImpl(
         if (BeforeImageUploadEvent(this, resource).broadcast().isCancelled) {
             throw EventCancelledException("cancelled by BeforeImageUploadEvent.ToGroup")
         }
-        bot.network.run<QQAndroidBotNetworkHandler, Image> {
+        bot.network.run<NetworkHandler, Image> {
             val response: ImgStore.GroupPicUp.Response = ImgStore.GroupPicUp(
                 bot.client,
                 uin = bot.id,
                 groupCode = id,
                 md5 = resource.md5,
-                size = resource.size.toInt()
+                size = resource.size,
             ).sendAndExpect()
 
             when (response) {
@@ -149,19 +165,28 @@ internal class GroupImpl(
                 is ImgStore.GroupPicUp.Response.FileExists -> {
                     val resourceId = resource.calculateResourceId()
                     return OfflineGroupImage(imageId = resourceId)
+                        .also { it.fileId = response.fileId.toInt() }
                         .also { ImageUploadEvent.Succeed(this@GroupImpl, resource, it).broadcast() }
                 }
                 is ImgStore.GroupPicUp.Response.RequireUpload -> {
-                    Highway.uploadResource(
-                        bot,
-                        response.uploadIpList.zip(response.uploadPortList),
-                        response.uKey,
-                        resource,
-                        kind = "group image",
-                        commandId = 2
+                    // val servers = response.uploadIpList.zip(response.uploadPortList)
+                    Highway.uploadResourceBdh(
+                        bot = bot,
+                        resource = resource,
+                        kind = GROUP_IMAGE,
+                        commandId = 2,
+                        initialTicket = response.uKey,
+                        noBdhAwait = true,
+                        fallbackSession = {
+                            BdhSession(
+                                EMPTY_BYTE_ARRAY, EMPTY_BYTE_ARRAY,
+                                ssoAddresses = response.uploadIpList.zip(response.uploadPortList).toMutableSet(),
+                            )
+                        },
                     )
-                    val resourceId = resource.calculateResourceId()
-                    return OfflineGroupImage(imageId = resourceId)
+
+                    return OfflineGroupImage(imageId = resource.calculateResourceId())
+                        .also { it.fileId = response.fileId.toInt() }
                         .also { ImageUploadEvent.Succeed(this@GroupImpl, resource, it).broadcast() }
                 }
             }
@@ -169,20 +194,36 @@ internal class GroupImpl(
     }
 
     override suspend fun uploadVoice(resource: ExternalResource): Voice {
-        if (resource.size > 1048576) {
-            throw  OverFileSizeMaxException()
-        }
         return bot.network.run {
-            val response: PttStore.GroupPttUp.Response.RequireUpload =
-                PttStore.GroupPttUp(bot.client, bot.id, id, resource).sendAndExpect()
+            kotlin.runCatching {
+                val (_) = Highway.uploadResourceBdh(
+                    bot = bot,
+                    resource = resource,
+                    kind = GROUP_VOICE,
+                    commandId = 29,
+                    extendInfo = PttStore.GroupPttUp.createTryUpPttPack(bot.id, id, resource)
+                        .toByteArray(Cmd0x388.ReqBody.serializer()),
+                )
+            }.recoverCatchingSuppressed {
+                when (val resp = PttStore.GroupPttUp(bot.client, bot.id, id, resource).sendAndExpect<Any>()) {
+                    is PttStore.GroupPttUp.Response.RequireUpload -> {
+                        tryServersUpload(
+                            bot,
+                            resp.uploadIpList.zip(resp.uploadPortList),
+                            resource.size,
+                            GROUP_VOICE,
+                            ChannelKind.HTTP
+                        ) { ip, port ->
+                            Mirai.Http.postPtt(ip, port, resource, resp.uKey, resp.fileKey)
+                        }
+                    }
+                }
+            }.getOrThrow()
 
-            Highway.uploadPttToServers(
-                bot,
-                response.uploadIpList.zip(response.uploadPortList),
-                resource,
-                response.uKey,
-                response.fileKey,
-            )
+            // val body = resp?.loadAs(Cmd0x388.RspBody.serializer())
+            //     ?.msgTryupPttRsp
+            //     ?.singleOrNull()?.fileKey ?: error("Group voice highway transfer succeed but failed to find fileKey")
+
             Voice(
                 "${resource.md5.toUHexString("")}.amr",
                 resource.md5,
@@ -192,6 +233,19 @@ internal class GroupImpl(
             )
         }
 
+    }
+
+    override suspend fun setEssenceMessage(source: MessageSource): Boolean {
+        checkBotPermission(MemberPermission.ADMINISTRATOR)
+        val result = bot.network.run {
+            TroopEssenceMsgManager.SetEssence(
+                bot.client,
+                this@GroupImpl.uin,
+                source.internalIds.first(),
+                source.ids.first()
+            ).sendAndExpect()
+        }
+        return result.success
     }
 
     override fun toString(): String = "Group($id)"

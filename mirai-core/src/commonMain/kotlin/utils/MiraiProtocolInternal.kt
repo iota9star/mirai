@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -34,14 +34,14 @@ internal class MiraiProtocolInternal(
         init {
             protocols[MiraiProtocol.ANDROID_PHONE] = MiraiProtocolInternal(
                 "com.tencent.mobileqq",
-                537066419,
-                "8.4.18",
-                "6.0.0.2454",
-                184024956,
+                537066978,
+                "8.5.5",
+                "6.0.0.2463",
+                150470524,
                 0x10400,
-                34869472,
+                16724722,
                 "A6 B7 45 BF 24 A2 C2 77 52 77 16 F6 F3 6E B6 8D",
-                1604580615L,
+                1609322643L,
             )
             protocols[MiraiProtocol.ANDROID_PAD] = MiraiProtocolInternal(
                 "com.tencent.mobileqq",

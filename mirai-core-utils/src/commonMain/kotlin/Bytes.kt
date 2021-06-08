@@ -15,7 +15,6 @@ package net.mamoe.mirai.utils
 
 import kotlinx.io.charsets.Charset
 import kotlinx.io.core.ByteReadPacket
-import java.util.*
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
 
@@ -27,11 +26,25 @@ public fun generateImageId(md5: ByteArray, format: String = "mirai"): String {
 
 @JvmOverloads
 public fun generateImageIdFromResourceId(resourceId: String, format: String = "mirai"): String? {
-    //  friend image id:  /1040400290-3666252994-EFF4427CE3D27DB6B1D9A8AB72E7A29C
-    //  friend image id:  /1040400290-3666252994-EFF4427C E3D2 7DB6 B1D9 A8AB72E7A29C
+    //  friend image id:  /f8f1ab55-bf8e-4236-b55e-955848d7069f
+    //  friend image id:  /                      f8f1ab55-bf8e-4236-b55e-955848d7069f
+
+    //  friend image id:  /0000000000-3666252994-EFF4427CE3D27DB6B1D9A8AB72E7A29C
+    //  friend image id:  /0000000000-3666252994-EFF4427C E3D2 7DB6 B1D9 A8AB72E7A29C
     //   group image id:                        {EF42A82D-8DB6-5D0F-4F11-68961D8DA5CB}.png
 
-    val md5String = resourceId.substringAfterLast("-").substringAfter("/").takeIf { it.length == 32 } ?: return null
+    if (resourceId.isNotEmpty()) {
+        if (resourceId[0] == '{') {
+            // {EF42A82D-8DB6-5D0F-4F11-68961D8DA5CB
+            if (resourceId.substringBefore('}', "").length == 37) {
+                return resourceId
+            }
+        }
+    }
+
+    val md5String = resourceId.substringAfterLast("-").substringAfter("/").takeIf { it.length == 32 }
+        ?: resourceId.replace("-", "").substringAfter('/').takeIf { it.length == 32 }
+        ?: return null
     return "{${generateUUID(md5String)}}.$format"
 }
 
@@ -55,8 +68,8 @@ public operator fun ByteArray.get(rangeStart: Int, rangeEnd: Int): String = buil
 
 private fun Byte.fixToString(): String {
     return when (val b = this.toInt() and 0xff) {
-        in 0..15 -> "0${this.toString(16).toUpperCase()}"
-        else -> b.toString(16).toUpperCase()
+        in 0..15 -> "0${this.toString(16).uppercase()}"
+        else -> b.toString(16).uppercase()
     }
 }
 
@@ -76,7 +89,7 @@ public fun ByteArray.toUHexString(
     return buildString(length * 2) {
         this@toUHexString.forEachIndexed { index, it ->
             if (index in offset until lastIndex) {
-                var ret = it.toUByte().toString(16).toUpperCase()
+                var ret = it.toUByte().toString(16).uppercase()
                 if (ret.length == 1) ret = "0$ret"
                 append(ret)
                 if (index < lastIndex - 1) append(separator)
@@ -106,7 +119,7 @@ public fun List<Byte>.toUHexString(separator: String = " ", offset: Int = 0, len
     return buildString(length * 2) {
         this@toUHexString.forEachIndexed { index, it ->
             if (index in offset until lastIndex) {
-                var ret = it.toUByte().toString(16).toUpperCase()
+                var ret = it.toUByte().toString(16).uppercase()
                 if (ret.length == 1) ret = "0$ret"
                 append(ret)
                 if (index < lastIndex - 1) append(separator)
@@ -126,7 +139,7 @@ public fun UByteArray.toUHexString(separator: String = " ", offset: Int = 0, len
     return buildString(length * 2) {
         this@toUHexString.forEachIndexed { index, it ->
             if (index in offset until lastIndex) {
-                var ret = it.toByte().toUByte().toString(16).toUpperCase()
+                var ret = it.toByte().toUByte().toString(16).uppercase()
                 if (ret.length == 1) ret = "0$ret"
                 append(ret)
                 if (index < lastIndex - 1) append(separator)
@@ -138,8 +151,8 @@ public fun UByteArray.toUHexString(separator: String = " ", offset: Int = 0, len
 public inline fun ByteArray.encodeToString(offset: Int = 0, charset: Charset = Charsets.UTF_8): String =
     kotlinx.io.core.String(this, charset = charset, offset = offset, length = this.size - offset)
 
-public inline fun ByteArray.encodeToBase64(): String =
-    Base64.getEncoder().encodeToString(this)
+public expect fun ByteArray.encodeBase64(): String
+public expect fun String.decodeBase64(): ByteArray
 
 public inline fun ByteArray.toReadPacket(offset: Int = 0, length: Int = this.size - offset): ByteReadPacket =
     ByteReadPacket(this, offset = offset, length = length)

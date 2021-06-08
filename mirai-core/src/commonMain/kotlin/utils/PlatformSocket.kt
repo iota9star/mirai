@@ -16,6 +16,8 @@ import kotlinx.io.core.ByteReadPacket
 import kotlinx.io.core.Closeable
 import kotlinx.io.streams.readPacketAtMost
 import kotlinx.io.streams.writePacket
+import net.mamoe.mirai.internal.network.highway.HighwayProtocolChannel
+import net.mamoe.mirai.utils.withUse
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.IOException
@@ -23,11 +25,13 @@ import java.net.NoRouteToHostException
 import java.net.Socket
 import java.net.UnknownHostException
 import java.util.concurrent.Executors
+import kotlin.contracts.InvocationKind
+import kotlin.contracts.contract
 
 /**
  * TCP Socket.
  */
-internal class PlatformSocket : Closeable {
+internal class PlatformSocket : Closeable, HighwayProtocolChannel {
     private lateinit var socket: Socket
 
     val isOpen: Boolean
@@ -61,7 +65,7 @@ internal class PlatformSocket : Closeable {
     /**
      * @throws SendPacketInternalException
      */
-    suspend fun send(packet: ByteReadPacket) {
+    override suspend fun send(packet: ByteReadPacket) {
         runInterruptible(Dispatchers.IO) {
             try {
                 writeChannel.writePacket(packet)
@@ -77,7 +81,7 @@ internal class PlatformSocket : Closeable {
     /**
      * @throws ReadPacketInternalException
      */
-    suspend fun read(): ByteReadPacket = suspendCancellableCoroutine { cont ->
+    override suspend fun read(): ByteReadPacket = suspendCancellableCoroutine { cont ->
         val task = thread.submit {
             kotlin.runCatching {
                 readChannel.readPacketAtMost(Long.MAX_VALUE)
@@ -95,6 +99,26 @@ internal class PlatformSocket : Closeable {
             socket = Socket(serverHost, serverPort)
             readChannel = socket.getInputStream().buffered()
             writeChannel = socket.getOutputStream().buffered()
+        }
+    }
+
+    companion object {
+        suspend fun connect(
+            serverIp: String,
+            serverPort: Int,
+        ): PlatformSocket {
+            val socket = PlatformSocket()
+            socket.connect(serverIp, serverPort)
+            return socket
+        }
+
+        suspend inline fun <R> withConnection(
+            serverIp: String,
+            serverPort: Int,
+            block: PlatformSocket.() -> R
+        ): R {
+            contract { callsInPlace(block, InvocationKind.EXACTLY_ONCE) }
+            return connect(serverIp, serverPort).withUse(block)
         }
     }
 }

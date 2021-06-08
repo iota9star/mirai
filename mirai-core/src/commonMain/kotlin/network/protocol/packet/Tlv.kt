@@ -11,28 +11,42 @@
 
 package net.mamoe.mirai.internal.network.protocol.packet
 
-import kotlinx.io.core.BytePacketBuilder
-import kotlinx.io.core.ByteReadPacket
-import kotlinx.io.core.toByteArray
-import kotlinx.io.core.writeFully
-import net.mamoe.mirai.internal.network.QQAndroidClient
-import net.mamoe.mirai.internal.network.guid
+import kotlinx.io.core.*
+import net.mamoe.mirai.internal.network.*
 import net.mamoe.mirai.internal.network.protocol.LoginType
 import net.mamoe.mirai.internal.utils.GuidSource
 import net.mamoe.mirai.internal.utils.MacOrAndroidIdChangeFlag
 import net.mamoe.mirai.internal.utils.NetworkType
 import net.mamoe.mirai.internal.utils.guidFlag
 import net.mamoe.mirai.internal.utils.io.*
-import net.mamoe.mirai.utils.currentTimeMillis
-import net.mamoe.mirai.utils.generateDeviceInfoData
-import net.mamoe.mirai.utils.md5
-import net.mamoe.mirai.utils.toByteArray
+import net.mamoe.mirai.utils.*
 import kotlin.random.Random
+
+private val Char.isHumanReadable get() = this in '0'..'9' || this in 'a'..'z' || this in 'A'..'Z' || this in """ <>?,.";':/\][{}~!@#$%^&*()_+-=`""" || this in "\n\r"
+
+internal fun TlvMap.smartToString(leadingLineBreak: Boolean = true, sorted: Boolean = true): String {
+    fun ByteArray.valueToString(): String {
+        val str = this.encodeToString()
+        return if (str.all { it.isHumanReadable }) str
+        else this.toUHexString()
+    }
+
+    val map = if (sorted) entries.sortedBy { it.key } else this.entries
+
+    return buildString {
+        if (leadingLineBreak) appendLine()
+        appendLine("count=${map.size}")
+        appendLine(map.joinToString("\n") { (key, value) ->
+            "0x" + key.toShort().toUHexString("") + " = " + value.valueToString()
+        })
+    }
+}
 
 /**
  * 显式表示一个 [ByteArray] 是一个 tlv 的 body
  */
-internal inline class Tlv(val value: ByteArray)
+@JvmInline
+internal value class Tlv(val value: ByteArray)
 
 internal fun BytePacketBuilder.t1(uin: Long, ip: ByteArray) {
     require(ip.size == 4) { "ip.size must == 4" }
@@ -41,7 +55,7 @@ internal fun BytePacketBuilder.t1(uin: Long, ip: ByteArray) {
         writeShort(1) // _ip_ver
         writeInt(Random.nextInt())
         writeInt(uin.toInt())
-        writeInt(currentTimeMillis().toInt())
+        writeInt(currentTimeSeconds().toInt())
         writeFully(ip)
         writeShort(0)
     } shouldEqualsTo 20
@@ -76,7 +90,7 @@ internal fun BytePacketBuilder.t18(
     writeShort(0x18)
     writeShortLVPacket {
         writeShort(1) //_ping_version
-        writeInt(1536) //_sso_version
+        writeInt(0x00_00_06_00) //_sso_version=1536
         writeInt(appId.toInt())
         writeInt(appClientVersion)
         writeInt(uin.toInt())
@@ -106,6 +120,9 @@ internal fun BytePacketBuilder.t106(
     )
 }
 
+/**
+ * A1
+ */
 internal fun BytePacketBuilder.t106(
     appId: Long = 16L,
     subAppId: Long,
@@ -143,7 +160,7 @@ internal fun BytePacketBuilder.t106(
                 writeLong(uin)
             }
 
-            writeInt(currentTimeMillis().toInt())
+            writeInt(currentTimeSeconds().toInt())
             writeFully(ByteArray(4)) // ip // no need to write actual ip
             writeByte(isSavePassword.toByte())
             writeFully(passwordMd5)
@@ -203,6 +220,16 @@ internal fun BytePacketBuilder.t100(
         writeInt(mainSigMap) // sigMap, 34869472?
     } shouldEqualsTo 22
 }
+
+internal fun BytePacketBuilder.t10a(
+    tgt: ByteArray,
+) {
+    writeShort(0x10a)
+    writeShortLVPacket {
+        writeFully(tgt)
+    }
+}
+
 
 internal fun BytePacketBuilder.t107(
     picType: Int,
@@ -305,6 +332,15 @@ internal fun BytePacketBuilder.t142(
     writeShortLVPacket {
         writeShort(0) //_version
         writeShortLVByteArrayLimitedLength(apkId, 32)
+    }
+}
+
+internal fun BytePacketBuilder.t143(
+    d2: ByteArray
+) {
+    writeShort(0x143)
+    writeShortLVPacket {
+        writeFully(d2)
     }
 }
 
@@ -607,6 +643,11 @@ internal fun BytePacketBuilder.t185() {
 }
 
 internal fun BytePacketBuilder.t400(
+    /**
+     *  if (var1[2] != null && var1[2].length > 0) {
+    this._G = (byte[])var1[2].clone();
+    }
+     */
     g: ByteArray, // 用于加密这个 tlv
     uin: Long,
     guid: ByteArray,
@@ -617,15 +658,14 @@ internal fun BytePacketBuilder.t400(
 ) {
     writeShort(0x400)
     writeShortLVPacket {
-        writeByte(1) // version
-        writeLong(uin)
-
         encryptAndWrite(g) {
+            writeByte(1) // version
+            writeLong(uin)
             writeFully(guid)
             writeFully(dpwd)
             writeInt(appId.toInt())
             writeInt(subAppId.toInt())
-            writeLong(currentTimeMillis())
+            writeInt(currentTimeSeconds().toInt())
             writeFully(randomSeed)
         }
     }
@@ -757,13 +797,51 @@ internal fun BytePacketBuilder.t536( // 1334
     }
 }
 
+internal fun BytePacketBuilder.t536( // 1334
+    loginExtraData: Collection<LoginExtraData>
+) {
+    writeShort(0x536)
+    writeShortLVPacket {
+        //com.tencent.loginsecsdk.ProtocolDet#packExtraData
+        writeByte(1) // const
+        writeByte(loginExtraData.size.toByte()) // data count
+        for (extraData in loginExtraData) {
+            writeLoginExtraData(extraData)
+        }
+    }
+}
+
 internal fun BytePacketBuilder.t525(
-    t536: ByteReadPacket
+    loginExtraData: Collection<LoginExtraData>,
+) {
+    writeShort(0x525)
+    writeShortLVPacket {
+        writeShort(1)
+        t536(loginExtraData)
+    }
+}
+
+internal fun BytePacketBuilder.t525(
+    t536: ByteReadPacket = buildPacket {
+        t536(buildPacket {
+            //com.tencent.loginsecsdk.ProtocolDet#packExtraData
+            writeByte(1) // const
+            writeByte(0) // data count
+        }.readBytes())
+    }
 ) {
     writeShort(0x525)
     writeShortLVPacket {
         writeShort(1)
         writePacket(t536)
+    }
+}
+
+internal fun BytePacketBuilder.t544( // 1334
+) {
+    writeShort(0x544)
+    writeShortLVPacket {
+        writeFully(byteArrayOf(0, 0, 0, 11)) // means native throws exception
     }
 }
 

@@ -17,17 +17,19 @@ import kotlinx.io.core.ByteReadPacket
 import kotlinx.serialization.protobuf.ProtoBuf
 import net.mamoe.mirai.Mirai
 import net.mamoe.mirai.contact.ClientKind
+import net.mamoe.mirai.contact.OtherClientInfo
+import net.mamoe.mirai.contact.Platform
+import net.mamoe.mirai.data.OnlineStatus
 import net.mamoe.mirai.event.events.BotOfflineEvent
 import net.mamoe.mirai.event.events.OtherClientOfflineEvent
 import net.mamoe.mirai.event.events.OtherClientOnlineEvent
 import net.mamoe.mirai.internal.QQAndroidBot
 import net.mamoe.mirai.internal.contact.appId
-import net.mamoe.mirai.internal.createOtherClient
+import net.mamoe.mirai.internal.contact.createOtherClient
 import net.mamoe.mirai.internal.message.contextualBugReportException
-import net.mamoe.mirai.internal.network.Packet
-import net.mamoe.mirai.internal.network.QQAndroidClient
-import net.mamoe.mirai.internal.network.getRandomByteArray
-import net.mamoe.mirai.internal.network.guid
+import net.mamoe.mirai.internal.network.*
+import net.mamoe.mirai.internal.network.components.ContactCacheService
+import net.mamoe.mirai.internal.network.components.ContactUpdater
 import net.mamoe.mirai.internal.network.protocol.data.jce.*
 import net.mamoe.mirai.internal.network.protocol.data.proto.Oidb0x769
 import net.mamoe.mirai.internal.network.protocol.data.proto.StatSvcGetOnline
@@ -37,7 +39,6 @@ import net.mamoe.mirai.internal.utils._miraiContentToString
 import net.mamoe.mirai.internal.utils.io.serialization.*
 import net.mamoe.mirai.utils.currentTimeMillis
 import net.mamoe.mirai.utils.encodeToString
-import net.mamoe.mirai.utils.localIpAddress
 import net.mamoe.mirai.utils.toReadPacket
 
 @Suppress("EnumEntryName", "unused")
@@ -74,7 +75,7 @@ internal class StatSvc {
 
         operator fun invoke(
             client: QQAndroidClient
-        ): OutgoingPacket = buildLoginOutgoingPacket(client, 1) {
+        ) = buildLoginOutgoingPacket(client, 1) {
             writeProtoBuf(
                 StatSvcGetOnline.ReqBody.serializer(), StatSvcGetOnline.ReqBody(
                     uin = client.uin,
@@ -93,31 +94,68 @@ internal class StatSvc {
         }
     }
 
+    internal object SimpleGet : OutgoingPacketFactory<SimpleGet.Response>("StatSvc.SimpleGet") {
+        internal object Response : Packet {
+            override fun toString(): String = "Response(SimpleGet.Response)"
+        }
+
+        operator fun invoke(
+            client: QQAndroidClient
+        ) = buildLoginOutgoingPacket(
+            client,
+            bodyType = 1,
+            extraData = client.wLoginSigInfo.d2.data,
+            key = client.wLoginSigInfo.d2Key
+        ) {
+            writeSsoPacket(client, client.subAppId, commandName, sequenceId = it) {
+
+            }
+        }
+
+        override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): Response {
+            return Response
+        }
+    }
+
     internal object Register : OutgoingPacketFactory<Register.Response>("StatSvc.register") {
 
-        internal object Response : Packet {
+        internal class Response(
+            val origin: SvcRespRegister
+        ) : Packet {
             override fun toString(): String = "Response(StatSvc.register)"
         }
 
         override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): Response {
             val packet = readUniPacket(SvcRespRegister.serializer())
-            if (packet.updateFlag.toInt() == 1) {
-                //TODO 加载好友列表
-            }
-            if (packet.largeSeqUpdate.toInt() == 1) {
-                //TODO 刷新好友列表
-            }
             packet.iHelloInterval.let {
-                bot.configuration.heartbeatPeriodMillis = it.times(1000).toLong()
+                bot.configuration.statHeartbeatPeriodMillis = it.times(1000).toLong()
             }
 
-            return Response
+            return Response(packet)
         }
 
-        operator fun invoke(
+        fun online(
             client: QQAndroidClient,
             regPushReason: RegPushReason = RegPushReason.appRegister
-        ): OutgoingPacket = buildLoginOutgoingPacket(
+        ) = impl(client, 1 or 2 or 4, client.onlineStatus, regPushReason) {
+            client.bot.components[ContactCacheService].friendListCache?.let { friendListCache: FriendListCache ->
+                iLargeSeq = friendListCache.friendListSeq
+                //  timeStamp = friendListCache.timeStamp
+            }
+        }
+
+        fun offline(
+            client: QQAndroidClient,
+            regPushReason: RegPushReason = RegPushReason.appRegister
+        ) = impl(client, 0, OnlineStatus.OFFLINE, regPushReason)
+
+        private fun impl(
+            client: QQAndroidClient,
+            bid: Long,
+            status: OnlineStatus,
+            regPushReason: RegPushReason = RegPushReason.appRegister,
+            applyAction: SvcReqRegister.() -> Unit = {}
+        ) = buildLoginOutgoingPacket(
             client,
             bodyType = 1,
             extraData = client.wLoginSigInfo.d2.data,
@@ -138,14 +176,14 @@ internal class StatSvc {
                             SvcReqRegister.serializer(),
                             SvcReqRegister(
                                 cConnType = 0,
-                                lBid = 1 or 2 or 4,
+                                lBid = bid,
                                 lUin = client.uin,
-                                iStatus = client.onlineStatus.id,
+                                iStatus = status.id,
                                 bKikPC = 0, // 是否把 PC 踢下线
                                 bKikWeak = 0,
                                 timeStamp = 0,
                                 // timeStamp = currentTimeSeconds // millis or seconds??
-                                iLargeSeq = 1551, // ?
+                                iLargeSeq = 0, // ?
                                 bOpenPush = 1,
                                 iLocaleID = 2052,
                                 bRegType =
@@ -162,8 +200,7 @@ internal class StatSvc {
                                 strDevType = client.device.model.encodeToString(),
                                 strOSVer = client.device.version.release.encodeToString(),
                                 uOldSSOIp = 0,
-                                uNewSSOIp = localIpAddress().runCatching { ipToLong() }
-                                    .getOrElse { "192.168.1.123".ipToLong() },
+                                uNewSSOIp = 0,
                                 strVendorName = "MIUI",
                                 strVendorOSName = "?ONEPLUS A5000_23_17",
                                 // register 时还需要
@@ -178,7 +215,7 @@ internal class StatSvc {
                                         configList = listOf(
                                             Oidb0x769.ConfigSeq(
                                                 type = 46,
-                                                version = 0
+                                                version = 1610538309
                                             ),
                                             Oidb0x769.ConfigSeq(
                                                 type = 283,
@@ -188,18 +225,14 @@ internal class StatSvc {
                                     )
                                 ),
                                 bSetMute = 0
-                            )
+                            ).apply(applyAction)
                         )
                     )
                 )
             }
         }
 
-        private fun String.ipToLong(): Long {
-            return split('.').foldIndexed(0L) { index: Int, acc: Long, s: String ->
-                acc or (((s.toLongOrNull() ?: 0) shl (index * 16)))
-            }
-        }
+
     }
 
     internal object ReqMSFOffline :
@@ -246,7 +279,7 @@ internal class StatSvc {
         IncomingPacketFactory<Packet?>("StatSvc.SvcReqMSFLoginNotify", "StatSvc.SvcReqMSFLoginNotify") {
 
         override suspend fun ByteReadPacket.decode(bot: QQAndroidBot, sequenceId: Int): Packet? =
-            bot.otherClientsLock.withLock {
+            bot.components[ContactUpdater].otherClientsLock.withLock {
                 val notify = readUniPacket(SvcReqMSFLoginNotifyData.serializer())
 
                 val appId = notify.iAppId.toInt()
@@ -257,13 +290,18 @@ internal class StatSvc {
 
                         val info = Mirai.getOnlineOtherClientsList(bot).find { it.appId == appId }
                             ?: kotlin.run {
-                                delay(1000) // sometimes server sync slow
+                                delay(2000) // sometimes server sync slow
                                 Mirai.getOnlineOtherClientsList(bot).find { it.appId == appId }
-                            } ?: throw contextualBugReportException(
-                                "SvcReqMSFLoginNotify (OtherClient online)",
-                                notify._miraiContentToString(),
-                                additional = "Failed to find corresponding instanceInfo."
-                            )
+                            } ?: kotlin.run {
+                                // 你的帐号在平板电脑上登录了
+                                val kind = notify.info?.substringAfter("在")?.substringBefore("上").orEmpty()
+                                OtherClientInfo(
+                                    appId,
+                                    Platform.MOBILE,
+                                    deviceName = kind,
+                                    deviceKind = kind
+                                )
+                            }
 
                         val client = bot.createOtherClient(info)
                         bot.otherClients.delegate.add(client)

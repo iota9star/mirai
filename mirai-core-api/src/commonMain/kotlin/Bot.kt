@@ -6,11 +6,9 @@
  *
  *  https://github.com/mamoe/mirai/blob/master/LICENSE
  */
-@file:Suppress(
-    "EXPERIMENTAL_API_USAGE", "unused", "FunctionName", "NOTHING_TO_INLINE", "UnusedImport",
-    "EXPERIMENTAL_OVERRIDE", "CanBeParameter", "MemberVisibilityCanBePrivate", "INAPPLICABLE_JVM_NAME",
-    "EXPOSED_SUPER_CLASS"
-)
+
+@file:Suppress("NOTHING_TO_INLINE")
+@file:JvmBlockingBridge
 
 package net.mamoe.mirai
 
@@ -62,7 +60,7 @@ public interface Bot : CoroutineScope, ContactOrBot, UserOrBot {
     /**
      * 昵称
      */
-    public val nick: String
+    public override val nick: String
 
     /**
      * 日志记录器
@@ -161,7 +159,6 @@ public interface Bot : CoroutineScope, ContactOrBot, UserOrBot {
      * @throws LoginFailedException 正常登录失败时抛出
      * @see alsoLogin `.apply { login() }` 捷径
      */
-    @JvmBlockingBridge
     public suspend fun login()
 
     /**
@@ -232,7 +229,6 @@ public interface Bot : CoroutineScope, ContactOrBot, UserOrBot {
      * 挂起协程直到 [Bot] 协程被关闭 ([Bot.close]).
      * 即使 [Bot] 离线, 也会等待直到协程关闭.
      */
-    @JvmBlockingBridge
     public suspend fun join(): Unit = supervisorJob.join()
 
 
@@ -243,7 +239,6 @@ public interface Bot : CoroutineScope, ContactOrBot, UserOrBot {
      *
      * @param cause 原因. 为 null 时视为正常关闭, 非 null 时视为异常关闭
      */
-    @JvmBlockingBridge
     public suspend fun closeAndJoin(cause: Throwable? = null) {
         close(cause)
         join()

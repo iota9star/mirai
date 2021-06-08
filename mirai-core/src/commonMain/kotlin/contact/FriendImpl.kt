@@ -23,13 +23,14 @@ import kotlinx.atomicfu.atomic
 import net.mamoe.mirai.LowLevelApi
 import net.mamoe.mirai.contact.Friend
 import net.mamoe.mirai.data.FriendInfo
-import net.mamoe.mirai.data.FriendInfoImpl
+import net.mamoe.mirai.event.events.FriendMessagePostSendEvent
+import net.mamoe.mirai.event.events.FriendMessagePreSendEvent
 import net.mamoe.mirai.internal.QQAndroidBot
+import net.mamoe.mirai.internal.contact.info.FriendInfoImpl
 import net.mamoe.mirai.internal.network.protocol.packet.list.FriendList
 import net.mamoe.mirai.internal.utils.C2CPkgMsgParsingCache
 import net.mamoe.mirai.message.MessageReceipt
-import net.mamoe.mirai.message.data.Message
-import net.mamoe.mirai.message.data.isContentEmpty
+import net.mamoe.mirai.message.data.*
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract
 import kotlin.coroutines.CoroutineContext
@@ -40,15 +41,6 @@ internal fun net.mamoe.mirai.internal.network.protocol.data.jce.FriendInfo.toMir
         nick,
         remark
     )
-
-@OptIn(ExperimentalContracts::class)
-internal inline fun FriendInfo.checkIsInfoImpl(): FriendInfoImpl {
-    contract {
-        returns() implies (this@checkIsInfoImpl is FriendInfoImpl)
-    }
-    check(this is FriendInfoImpl) { "A FriendInfo instance is not instance of checkIsInfoImpl. Your instance: ${this::class.qualifiedName}" }
-    return this
-}
 
 @OptIn(ExperimentalContracts::class)
 internal inline fun Friend.checkIsFriendImpl(): FriendImpl {
@@ -80,16 +72,12 @@ internal class FriendImpl(
         }
     }
 
+
+    private val handler: FriendSendMessageHandler by lazy { FriendSendMessageHandler(this) }
+
     @Suppress("DuplicatedCode")
     override suspend fun sendMessage(message: Message): MessageReceipt<Friend> {
-        require(!message.isContentEmpty()) { "message is empty" }
-        return sendMessageImpl(
-            message,
-            friendReceiptConstructor = { MessageReceipt(it, this) },
-            tReceiptConstructor = { MessageReceipt(it, this) }
-        ).also {
-            logMessageSent(message)
-        }
+        return handler.sendMessageImpl(message, ::FriendMessagePreSendEvent, ::FriendMessagePostSendEvent)
     }
 
     override fun toString(): String = "Friend($id)"

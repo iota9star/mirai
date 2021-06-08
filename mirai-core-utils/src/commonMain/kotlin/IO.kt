@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -16,8 +16,13 @@ package net.mamoe.mirai.utils
 
 import io.ktor.utils.io.charsets.*
 import kotlinx.io.core.*
+import java.io.File
 import kotlin.text.Charsets
 
+public val EMPTY_BYTE_ARRAY: ByteArray = ByteArray(0)
+
+public val DECRYPTER_16_ZERO: ByteArray = ByteArray(16)
+public val KEY_16_ZEROS: ByteArray = ByteArray(16)
 
 @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
 public inline fun <R> ByteReadPacket.useBytes(
@@ -124,3 +129,19 @@ public inline fun Input.readString(length: UShort, charset: Charset = Charsets.U
 
 public inline fun Input.readString(length: Byte, charset: Charset = Charsets.UTF_8): String =
     String(this.readBytes(length.toInt()), charset = charset)
+
+public fun Input.readUShortLVString(): String = String(this.readUShortLVByteArray())
+public fun Input.readUShortLVByteArray(): ByteArray = this.readBytes(this.readUShort().toInt())
+
+public fun File.createFileIfNotExists() {
+    if (!this.exists()) {
+        this.parentFile.mkdirs()
+        this.createNewFile()
+    }
+}
+
+public fun File.resolveCreateFile(relative: String): File = this.resolve(relative).apply { createFileIfNotExists() }
+public fun File.resolveCreateFile(relative: File): File = this.resolve(relative).apply { createFileIfNotExists() }
+
+public fun File.resolveMkdir(relative: String): File = this.resolve(relative).apply { mkdirs() }
+public fun File.resolveMkdir(relative: File): File = this.resolve(relative).apply { mkdirs() }

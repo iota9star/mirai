@@ -13,20 +13,19 @@ package net.mamoe.mirai.internal.contact
 
 import kotlinx.atomicfu.AtomicInt
 import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import net.mamoe.mirai.LowLevelApi
 import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.data.MemberInfo
 import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.*
 import net.mamoe.mirai.internal.message.OnlineMessageSourceToTempImpl
-import net.mamoe.mirai.internal.message.ensureSequenceIdAvailable
-import net.mamoe.mirai.internal.message.firstIsInstanceOrNull
 import net.mamoe.mirai.internal.network.protocol.packet.chat.TroopManagement
-import net.mamoe.mirai.internal.network.protocol.packet.chat.receive.MessageSvcPbSendMsg
-import net.mamoe.mirai.internal.network.protocol.packet.chat.receive.createToTemp
 import net.mamoe.mirai.message.MessageReceipt
-import net.mamoe.mirai.message.data.*
+import net.mamoe.mirai.message.data.Message
+import net.mamoe.mirai.utils.cast
 import net.mamoe.mirai.utils.currentTimeSeconds
 import kotlin.contracts.ExperimentalContracts
 import kotlin.contracts.contract
@@ -48,65 +47,23 @@ internal class NormalMemberImpl constructor(
 
     override fun toString(): String = "NormalMember($id)"
 
-    @Suppress("UNCHECKED_CAST")
-    @JvmSynthetic
+    private val handler: GroupTempSendMessageHandler by lazy { GroupTempSendMessageHandler(this) }
+
+    @Suppress("DuplicatedCode")
     override suspend fun sendMessage(message: Message): MessageReceipt<NormalMember> {
-        require(!message.isContentEmpty()) { "message is empty" }
-
-        val asFriend = this.asFriendOrNull()
-        val asStranger = this.asStrangerOrNull()
-
-        return (asFriend?.sendMessageImpl(
-            message,
-            friendReceiptConstructor = { MessageReceipt(it, asFriend) },
-            tReceiptConstructor = { MessageReceipt(it, this) }
-        ) ?: asStranger?.sendMessageImpl(
-            message,
-            strangerReceiptConstructor = { MessageReceipt(it, asStranger) },
-            tReceiptConstructor = { MessageReceipt(it, this) }
-        ) ?: sendMessageImpl(message)).also { logMessageSent(message) }
+        return asFriendOrNull()?.sendMessage(message)?.convert()
+            ?: asStrangerOrNull()?.sendMessage(message)?.convert()
+            ?: handler.sendMessageImpl<NormalMember>(
+                message = message,
+                preSendEventConstructor = ::GroupTempMessagePreSendEvent,
+                postSendEventConstructor = ::GroupTempMessagePostSendEvent.cast()
+            )
     }
 
-    private suspend fun sendMessageImpl(message: Message): MessageReceipt<NormalMember> {
-        val chain = kotlin.runCatching {
-            GroupTempMessagePreSendEvent(this, message).broadcast()
-        }.onSuccess {
-            check(!it.isCancelled) {
-                throw EventCancelledException("cancelled by GroupTempMessagePreSendEvent")
-            }
-        }.getOrElse {
-            throw EventCancelledException("exception thrown when broadcasting GroupTempMessagePreSendEvent", it)
-        }.message.toMessageChain()
-
-        chain.firstIsInstanceOrNull<QuoteReply>()?.source?.ensureSequenceIdAvailable()
-
-        val result = bot.network.runCatching {
-            val source: OnlineMessageSourceToTempImpl
-            MessageSvcPbSendMsg.createToTemp(
-                bot.client,
-                this@NormalMemberImpl,
-                chain
-            ) {
-                source = it
-            }.sendAndExpect<MessageSvcPbSendMsg.Response>().let {
-                check(it is MessageSvcPbSendMsg.Response.SUCCESS) {
-                    "Send temp message failed: $it"
-                }
-            }
-            MessageReceipt(source, this@NormalMemberImpl)
-        }
-
-        result.fold(
-            onSuccess = {
-                GroupTempMessagePostSendEvent(this, chain, null, it)
-            },
-            onFailure = {
-                GroupTempMessagePostSendEvent(this, chain, it, null)
-            }
-        ).broadcast()
-
-        return result.getOrThrow()
+    private fun MessageReceipt<User>.convert(): MessageReceipt<NormalMemberImpl> {
+        return MessageReceipt(OnlineMessageSourceToTempImpl(source, this@NormalMemberImpl), this@NormalMemberImpl)
     }
+
 
     @Suppress("PropertyName")
     internal var _nameCard: String = memberInfo.nameCard
@@ -173,6 +130,9 @@ internal class NormalMemberImpl constructor(
         check(this.id != bot.id) {
             "A bot can't mute itself."
         }
+        require(durationSeconds > 0) {
+            "durationSeconds must greater than zero"
+        }
         checkBotPermissionHigherThanThis("mute")
         bot.network.run {
             TroopManagement.Mute(
@@ -184,7 +144,8 @@ internal class NormalMemberImpl constructor(
         }
 
         @Suppress("RemoveRedundantQualifierName") // or unresolved reference
-        net.mamoe.mirai.event.events.MemberMuteEvent(this@NormalMemberImpl, durationSeconds, null).broadcast()
+        (net.mamoe.mirai.event.events.MemberMuteEvent(this@NormalMemberImpl, durationSeconds, null).broadcast())
+        this._muteTimestamp = currentTimeSeconds().toInt() + durationSeconds
     }
 
     override suspend fun unmute() {
@@ -199,7 +160,8 @@ internal class NormalMemberImpl constructor(
         }
 
         @Suppress("RemoveRedundantQualifierName") // or unresolved reference
-        net.mamoe.mirai.event.events.MemberUnmuteEvent(this@NormalMemberImpl, null).broadcast()
+        (net.mamoe.mirai.event.events.MemberUnmuteEvent(this@NormalMemberImpl, null).broadcast())
+        this._muteTimestamp = 0
     }
 
     override suspend fun kick(message: String) {
@@ -221,6 +183,43 @@ internal class NormalMemberImpl constructor(
             this@NormalMemberImpl.cancel(CancellationException("Kicked by bot"))
             MemberLeaveEvent.Kick(this@NormalMemberImpl, null).broadcast()
         }
+    }
+
+    override suspend fun modifyAdmin(operation: Boolean) {
+        checkBotPermissionHighest("modifyAdmin")
+
+        val origin = this@NormalMemberImpl.permission
+        val new = if (operation) {
+            MemberPermission.ADMINISTRATOR
+        } else {
+            MemberPermission.MEMBER
+        }
+
+        if (origin == new) return
+
+        bot.network.run {
+            val resp: TroopManagement.ModifyAdmin.Response = TroopManagement.ModifyAdmin(
+                client = bot.client,
+                member = this@NormalMemberImpl,
+                operation = operation
+            ).sendAndExpect()
+
+            check(resp.success) {
+                "Failed to modify admin, cause: ${resp.msg}"
+            }
+
+            this@NormalMemberImpl.permission = new
+
+            MemberPermissionChangeEvent(this@NormalMemberImpl, origin, new).broadcast()
+        }
+    }
+}
+
+internal fun Member.checkBotPermissionHighest(operationName: String) {
+    check(group.botPermission == MemberPermission.OWNER) {
+        throw PermissionDeniedException(
+            "`$operationName` operation requires the OWNER permission, while bot has ${group.botPermission}"
+        )
     }
 }
 

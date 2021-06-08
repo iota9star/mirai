@@ -12,8 +12,9 @@ package net.mamoe.mirai.internal.network.protocol.data.proto
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
 import net.mamoe.mirai.internal.network.Packet
-import net.mamoe.mirai.internal.network.protocol.packet.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.internal.utils.io.ProtoBuf
+import net.mamoe.mirai.utils.EMPTY_BYTE_ARRAY
+import net.mamoe.mirai.utils.capitalize
 
 internal class Oidb0x5d4 : ProtoBuf {
     @Serializable
@@ -958,7 +959,7 @@ internal class OidbSso : ProtoBuf {
     @Serializable
     internal class OIDBSSOPkg(
         @ProtoNumber(1) @JvmField val command: Int = 0,
-        @ProtoNumber(2) @JvmField val serviceType: Int = 0,
+        @ProtoNumber(2) @JvmField val serviceType: Int,
         @ProtoNumber(3) @JvmField val result: Int = 0,
         @ProtoNumber(4) @JvmField val bodybuffer: ByteArray = EMPTY_BYTE_ARRAY,
         @ProtoNumber(5) @JvmField val errorMsg: String = "",

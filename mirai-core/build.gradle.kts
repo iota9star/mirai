@@ -17,13 +17,9 @@ plugins {
     kotlin("plugin.serialization")
     id("net.mamoe.kotlin-jvm-blocking-bridge")
     `maven-publish`
-    id("com.jfrog.bintray")
-    java
 }
 
 description = "Mirai Protocol implementation for QQ Android"
-
-val isAndroidSDKAvailable: Boolean by project
 
 afterEvaluate {
     tasks.getByName("compileKotlinCommon").enabled = false
@@ -37,9 +33,13 @@ kotlin {
     explicitApi()
 
     if (isAndroidSDKAvailable) {
-        apply(from = rootProject.file("gradle/android.gradle"))
-        android("android") {
-            publishAllLibraryVariants()
+//        apply(from = rootProject.file("gradle/android.gradle"))
+//        android("android") {
+//            publishAllLibraryVariants()
+//        }
+        jvm("android") {
+            attributes.attribute(KotlinPlatformType.attribute, KotlinPlatformType.androidJvm)
+            //   publishAllLibraryVariants()
         }
     } else {
         printAndroidNotInstalled()
@@ -57,14 +57,10 @@ kotlin {
     }*/
 
     sourceSets.apply {
-        all {
+
+        val commonMain by getting {
             dependencies {
                 api(project(":mirai-core-api"))
-            }
-        }
-
-        commonMain {
-            dependencies {
                 implementation(project(":mirai-core-utils"))
                 api1(`kotlinx-serialization-core`)
                 api1(`kotlinx-serialization-json`)
@@ -73,48 +69,66 @@ kotlin {
                 api1(`kotlinx-atomicfu`)
                 api1(`kotlinx-coroutines-core`)
 
-                api1(`kotlinx-io`)
+                api1(`kotlinx-io-jvm`)
                 implementation1(`kotlinx-coroutines-io`)
+                implementation(`netty-all`)
             }
         }
 
         commonTest {
             dependencies {
                 implementation(kotlin("script-runtime"))
+                runtimeOnly(`slf4j-simple`)
             }
         }
 
         if (isAndroidSDKAvailable) {
-            androidMain {
+            val androidMain by getting {
+                dependsOn(commonMain)
                 dependencies {
+                    compileOnly(`android-runtime`)
                 }
             }
-
-            androidTest {
+            val androidTest by getting {
                 dependencies {
                     implementation(kotlin("test", Versions.kotlinCompiler))
-                    implementation(kotlin("test-junit", Versions.kotlinCompiler))
+                    implementation(kotlin("test-junit5", Versions.kotlinCompiler))
                     implementation(kotlin("test-annotations-common"))
                     implementation(kotlin("test-common"))
+                    implementation("org.bouncycastle:bcprov-jdk15on:1.64")
                 }
             }
         }
 
-        jvmMain {
+        val jvmMain by getting {
             dependencies {
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-                api1(`kotlinx-io-jvm`)
                 // api(kotlinx("coroutines-debug", Versions.coroutines))
             }
         }
 
-        jvmTest {
+        val jvmTest by getting {
             dependencies {
-                implementation("org.pcap4j:pcap4j-distribution:1.8.2")
-              //  implementation("net.mamoe:mirai-login-solver-selenium:1.0-dev-14")
+                api1(`kotlinx-coroutines-debug`)
+                //  implementation("net.mamoe:mirai-login-solver-selenium:1.0-dev-14")
             }
         }
     }
+}
+
+if (isAndroidSDKAvailable) {
+    tasks.register("checkAndroidApiLevel") {
+        doFirst {
+            analyzes.AndroidApiLevelCheck.check(
+                buildDir.resolve("classes/kotlin/android/main"),
+                project.property("mirai.android.target.api.level")!!.toString().toInt(),
+                project
+            )
+        }
+        group = "verification"
+        this.mustRunAfter("androidMainClasses")
+    }
+    tasks.getByName("androidTest").dependsOn("checkAndroidApiLevel")
 }
 
 fun org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler.implementation1(dependencyNotation: String) =

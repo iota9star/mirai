@@ -13,42 +13,23 @@ import kotlinx.io.core.ByteReadPacket
 import kotlinx.io.core.buildPacket
 import kotlinx.io.core.readBytes
 import kotlinx.io.core.toByteArray
-import net.mamoe.mirai.LowLevelApi
 import net.mamoe.mirai.contact.Member
 import net.mamoe.mirai.internal.QQAndroidBot
+import net.mamoe.mirai.internal.contact.info.GroupInfoImpl
 import net.mamoe.mirai.internal.network.Packet
 import net.mamoe.mirai.internal.network.QQAndroidClient
 import net.mamoe.mirai.internal.network.protocol.data.jce.ModifyGroupCardReq
 import net.mamoe.mirai.internal.network.protocol.data.jce.RequestPacket
-import net.mamoe.mirai.internal.network.protocol.data.jce.StTroopNum
 import net.mamoe.mirai.internal.network.protocol.data.jce.stUinInfo
 import net.mamoe.mirai.internal.network.protocol.data.proto.*
 import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacket
 import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacketFactory
 import net.mamoe.mirai.internal.network.protocol.packet.buildOutgoingUniPacket
+import net.mamoe.mirai.internal.network.subAppId
 import net.mamoe.mirai.internal.utils.io.serialization.*
 import net.mamoe.mirai.utils.daysToSeconds
-import net.mamoe.mirai.data.GroupInfo as MiraiGroupInfo
-
-@OptIn(LowLevelApi::class)
-internal class GroupInfoImpl(
-    private val stTroopNum: StTroopNum
-) : MiraiGroupInfo, Packet, Packet.NoLog {
-    override val uin: Long get() = stTroopNum.groupUin
-    override val owner: Long get() = stTroopNum.dwGroupOwnerUin
-    override val groupCode: Long get() = stTroopNum.groupCode
-    override val memo: String get() = stTroopNum.groupMemo
-    override val name: String get() = stTroopNum.groupName
-    override val allowMemberInvite get() = stTroopNum.dwGroupFlagExt?.and(0x000000c0) != 0L
-    override val allowAnonymousChat get() = stTroopNum.dwGroupFlagExt?.and(0x40000000) == 0L
-    override val autoApprove get() = stTroopNum.dwGroupFlagExt3?.and(0x00100000) == 0L
-    override val confessTalk get() = stTroopNum.dwGroupFlagExt3?.and(0x00002000) == 0L
-    override val muteAll: Boolean get() = stTroopNum.dwShutUpTimestamp != 0L
-    override val botMuteTimestamp: Int get() = stTroopNum.dwMyShutUpTimestamp?.toInt() ?: 0
-}
 
 internal class TroopManagement {
-
     internal object Mute : OutgoingPacketFactory<Mute.Response>("OidbSvc.0x570_8") {
         override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): Response {
             //屁用没有
@@ -156,7 +137,7 @@ internal class TroopManagement {
 
         operator fun invoke(
             client: QQAndroidClient
-        ): OutgoingPacket = buildOutgoingUniPacket(client) {
+        ) = buildOutgoingUniPacket(client) {
             writeProtoBuf(
                 OidbSso.OIDBSSOPkg.serializer(), OidbSso.OIDBSSOPkg(
                     command = 1174,
@@ -212,7 +193,7 @@ internal class TroopManagement {
             client: QQAndroidClient,
             member: Member,
             message: String
-        ): OutgoingPacket = buildOutgoingUniPacket(client) {
+        ) = buildOutgoingUniPacket(client) {
             writeProtoBuf(
                 OidbSso.OIDBSSOPkg.serializer(),
                 OidbSso.OIDBSSOPkg(
@@ -243,8 +224,8 @@ internal class TroopManagement {
             client: QQAndroidClient,
             groupCode: Long,
             switch: Boolean
-        ): OutgoingPacket = impl(client, groupCode) {
-            shutupTime = if (switch) 1 else 0
+        ) = impl(client, groupCode) {
+            shutupTime = if (switch) 0x0FFFFFFF else 0
         }
 
         private inline fun impl(
@@ -257,10 +238,11 @@ internal class TroopManagement {
                     OidbSso.OIDBSSOPkg.serializer(),
                     OidbSso.OIDBSSOPkg(
                         command = 2202,
+                        serviceType = 0,
                         bodybuffer = Oidb0x89a.ReqBody(
                             groupCode = groupCode,
                             stGroupInfo = Oidb0x89a.Groupinfo().apply(info)
-                        ).toByteArray(Oidb0x89a.ReqBody.serializer())
+                        ).toByteArray(Oidb0x89a.ReqBody.serializer()),
                     )
                 )
             }
@@ -270,7 +252,7 @@ internal class TroopManagement {
             client: QQAndroidClient,
             groupCode: Long,
             switch: Boolean
-        ): OutgoingPacket = impl(client, groupCode) {
+        ) = impl(client, groupCode) {
             groupFlagext3 = if (switch) 0x00100000 else 0x00000000//暂时无效
         }
 
@@ -278,7 +260,7 @@ internal class TroopManagement {
             client: QQAndroidClient,
             groupCode: Long,
             newName: String
-        ): OutgoingPacket = impl(client, groupCode) {
+        ) = impl(client, groupCode) {
             ingGroupName = newName.toByteArray()
         }
 
@@ -286,7 +268,7 @@ internal class TroopManagement {
             client: QQAndroidClient,
             groupCode: Long,
             newMemo: String
-        ): OutgoingPacket = impl(client, groupCode) {
+        ) = impl(client, groupCode) {
             ingGroupMemo = newMemo.toByteArray()
         }
 
@@ -294,7 +276,7 @@ internal class TroopManagement {
             client: QQAndroidClient,
             groupCode: Long,
             switch: Boolean
-        ): OutgoingPacket = impl(client, groupCode) {
+        ) = impl(client, groupCode) {
             allowMemberInvite = if (switch) 1 else 0
         }
 
@@ -389,6 +371,49 @@ internal class TroopManagement {
                             )
                         )
                     )
+                )
+            }
+        }
+
+    }
+
+    internal object ModifyAdmin : OutgoingPacketFactory<ModifyAdmin.Response>("OidbSvc.0x55c_1") {
+        data class Response(val success: Boolean, val msg: String) : Packet {
+            override fun toString(): String {
+                return "TroopManagement.ModifyAdmin.Response(success=${success}, msg=${msg})"
+            }
+        }
+
+        /**
+         * @param operation: true is add
+         */
+        operator fun invoke(
+            client: QQAndroidClient,
+            member: Member,
+            operation: Boolean
+        ): OutgoingPacket {
+            return buildOutgoingUniPacket(client) {
+                writeProtoBuf(
+                    OidbSso.OIDBSSOPkg.serializer(),
+                    OidbSso.OIDBSSOPkg(
+                        command = 1372,
+                        serviceType = 1,
+                        bodybuffer = buildPacket {
+                            writeInt(member.group.id.toInt())
+                            writeInt(member.id.toInt())
+                            writeByte(if (operation) 1 else 0)
+                        }.readBytes()
+                    )
+                )
+            }
+        }
+
+        override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): ModifyAdmin.Response {
+            val stupidPacket = readProtoBuf(OidbSso.OIDBSSOPkg.serializer())
+            return stupidPacket.run {
+                ModifyAdmin.Response(
+                    this.result == 0,
+                    this.errorMsg
                 )
             }
         }

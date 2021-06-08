@@ -9,6 +9,7 @@
 
 @file:JvmName("SerializationUtils")
 @file:JvmMultifileClass
+@file:Suppress("NOTHING_TO_INLINE")
 
 package net.mamoe.mirai.internal.utils.io.serialization
 
@@ -51,7 +52,9 @@ internal fun <T : JceStruct> ByteReadPacket.readJceStruct(
     serializer: DeserializationStrategy<T>,
     length: Int = this.remaining.toInt()
 ): T {
-    return Tars.UTF_8.load(serializer, this.readPacketExact(length))
+    this.readPacketExact(length).use {
+        return Tars.UTF_8.load(serializer, it)
+    }
 }
 
 internal fun <T : JceStruct> BytePacketBuilder.writeJceRequestPacket(
@@ -127,6 +130,24 @@ internal fun <T : ProtoBuf> BytePacketBuilder.writeProtoBuf(serializer: Serializ
     this.writeFully(v.toByteArray(serializer))
 }
 
+internal fun <T : ProtoBuf> BytePacketBuilder.writeOidb(
+    command: Int = 0,
+    serviceType: Int = 0,
+    serializer: SerializationStrategy<T>,
+    v: T,
+    clientVersion: String = "android 8.4.8",
+) {
+    return this.writeProtoBuf(
+        OidbSso.OIDBSSOPkg.serializer(),
+        OidbSso.OIDBSSOPkg(
+            command = command,
+            serviceType = serviceType,
+            clientVersion = clientVersion,
+            bodybuffer = v.toByteArray(serializer)
+        )
+    )
+}
+
 /**
  * dump
  */
@@ -156,6 +177,53 @@ internal fun <T : ProtoBuf> ByteReadPacket.readProtoBuf(
     serializer: DeserializationStrategy<T>,
     length: Int = this.remaining.toInt()
 ): T = KtProtoBuf.decodeFromByteArray(serializer, this.readBytes(length))
+
+@Suppress("NON_PUBLIC_PRIMARY_CONSTRUCTOR_OF_INLINE_CLASS")
+@JvmInline
+internal value class OidbBodyOrFailure<T : ProtoBuf> private constructor(
+    private val v: Any
+) {
+    internal class Failure(
+        val oidb: OidbSso.OIDBSSOPkg
+    )
+
+    inline fun <R> fold(
+        onSuccess: T.(T) -> R,
+        onFailure: OidbSso.OIDBSSOPkg.(OidbSso.OIDBSSOPkg) -> R,
+    ): R {
+        contract {
+            callsInPlace(onSuccess, InvocationKind.AT_MOST_ONCE)
+            callsInPlace(onFailure, InvocationKind.AT_MOST_ONCE)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return if (v is Failure) {
+            onFailure(v.oidb, v.oidb)
+        } else {
+            val t = v as T
+            onSuccess(t, t)
+        }
+    }
+
+    companion object {
+        fun <T : ProtoBuf> success(t: T): OidbBodyOrFailure<T> = OidbBodyOrFailure(t)
+        fun <T : ProtoBuf> failure(oidb: OidbSso.OIDBSSOPkg): OidbBodyOrFailure<T> = OidbBodyOrFailure(Failure(oidb))
+    }
+}
+
+/**
+ * load
+ */
+internal inline fun <T : ProtoBuf> ByteReadPacket.readOidbSsoPkg(
+    serializer: DeserializationStrategy<T>,
+    length: Int = this.remaining.toInt()
+): OidbBodyOrFailure<T> {
+    val oidb = readBytes(length).loadAs(OidbSso.OIDBSSOPkg.serializer())
+    return if (oidb.result == 0) {
+        OidbBodyOrFailure.success(oidb.bodybuffer.loadAs(serializer))
+    } else {
+        OidbBodyOrFailure.failure(oidb)
+    }
+}
 
 /**
  * 构造 [RequestPacket] 的 [RequestPacket.sBuffer]

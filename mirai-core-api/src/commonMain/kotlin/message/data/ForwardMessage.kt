@@ -16,10 +16,7 @@ import io.ktor.util.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import net.mamoe.mirai.Bot
-import net.mamoe.mirai.contact.Contact
-import net.mamoe.mirai.contact.Group
-import net.mamoe.mirai.contact.User
-import net.mamoe.mirai.contact.nameCardOrNick
+import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.event.events.MessageEvent
 import net.mamoe.mirai.message.data.ForwardMessage.DisplayStrategy
 import net.mamoe.mirai.utils.MiraiExperimentalApi
@@ -28,11 +25,21 @@ import net.mamoe.mirai.utils.safeCast
 import net.mamoe.mirai.utils.toLongUnsigned
 
 
-@MiraiExperimentalApi
+/**
+ * 未通过 [DisplayStrategy] 渲染的合并转发消息. [RawForwardMessage] 仅作为一个中间件, 用于 [ForwardMessageBuilder].
+ *
+ * [RawForwardMessage] 可以序列化保存, 也可以被多次[渲染][RawForwardMessage.render]产生不同格式的 [ForwardMessage].
+ */
 @Serializable
 public data class RawForwardMessage(
+    /**
+     * 消息列表
+     */
     val nodeList: List<ForwardMessage.Node>
 ) {
+    /**
+     * 渲染这个 [RawForwardMessage] 并产生可以发送的 [ForwardMessage]
+     */
     public fun render(displayStrategy: DisplayStrategy): ForwardMessage = ForwardMessage(
         preview = displayStrategy.generatePreview(this),
         title = displayStrategy.generateTitle(this),
@@ -53,11 +60,9 @@ public data class RawForwardMessage(
  * ### 移动端
  * 在移动客户端将会显示为卡片
  *
- * `<title>`: [DisplayStrategy.generateTitle]
- *
- * `<preview>`: [DisplayStrategy.generatePreview]
- *
- * `<summary>`: [DisplayStrategy.generateSummary]
+ * - `<title>`: [DisplayStrategy.generateTitle]
+ * - `<preview>`: [DisplayStrategy.generatePreview]
+ * - `<summary>`: [DisplayStrategy.generateSummary]
  *
  * ```
  * |-------------------------|
@@ -93,6 +98,7 @@ public data class RawForwardMessage(
  *
  *
  * ## 构造
+ * - 使用构建器 [ForwardMessageBuilder]
  * - 使用 [DSL][buildForwardMessage]
  * - 通过 [MessageEvent] 集合转换: [toForwardMessage]
  *
@@ -110,14 +116,14 @@ public data class ForwardMessage(
 ) : MessageContent, ConstrainSingle {
     override val key: MessageKey<ForwardMessage> get() = Key
 
-    override fun contentToString(): String {
-        return "[转发消息]"
-    }
+    override fun contentToString(): String = "[转发消息]"
 
     // use data-class generated toString()
 
 
     /**
+     * 合并转发卡片展示策略. 用于 [RawForwardMessage] 的 [渲染][RawForwardMessage.render].
+     *
      * @see ForwardMessage
      */
     public interface DisplayStrategy {
@@ -138,7 +144,6 @@ public data class ForwardMessage(
 
         /**
          * 显示在卡片 body 中, 只会显示 sequence 前四个元素.
-         * Java 用户: 使用 [sequenceOf] (`SequenceKt.sequenceOf`) 或 [asSequence] (`SequenceKt.asSequence`)
          */
         public fun generatePreview(forward: RawForwardMessage): List<String> =
             forward.nodeList.map { it.senderName + ": " + it.messageChain.contentToString() }
@@ -148,15 +153,33 @@ public data class ForwardMessage(
          */
         public fun generateSummary(forward: RawForwardMessage): String = "查看 ${forward.nodeList.size} 条转发消息"
 
+        /**
+         * 默认的, 与官方客户端相似的展示方案.
+         */
         public companion object Default : DisplayStrategy
     }
 
 
+    /**
+     * 消息节点
+     */
     @Serializable
     public data class Node(
+        /**
+         * 发送人 [User.id]
+         */
         override val senderId: Long,
+        /**
+         * 时间戳 秒
+         */
         override val time: Int,
+        /**
+         * 发送人昵称
+         */
         override val senderName: String,
+        /**
+         * 消息内容
+         */
         override val messageChain: MessageChain
     ) : INode {
         public constructor(
@@ -167,6 +190,9 @@ public data class ForwardMessage(
         ) : this(senderId, time, senderName, message.toMessageChain())
     }
 
+    /**
+     * 请构造 [Node]
+     */
     @MiraiExperimentalApi
     public interface INode {
         /**
@@ -271,7 +297,44 @@ public annotation class ForwardMessageDsl
  *
  * # 总览
  *
- * 使用 DSL 构造一个转发:
+ *
+ * 在 Java 使用一般方法添加消息构建转发:
+ * ```
+ * ForwardMessageBuilder builder = new ForwardMessageBuilder(group);
+ *
+ * builder.add(123456L, "群员A", new PlainText("消息"))
+ * builder.add(user, new PlainText("msg"));
+ * builder.add(user, (chain) -> {
+ *     chain.add(new At(user));
+ *     chain.add(new PlainText("Hello"))
+ * }); // 使用 Java 8 lambda 语法, MessageChainBuilder 快速构建消息链
+ * builder.add(event); // 可添加 MessageEvent
+ *
+ * builder.setDisplayStrategy(new ForwardMessage.DisplayStrategy() {
+ * }); // 可选, 修改显示策略
+ *
+ * ForwardMessage forward = builder.build();
+ * group.sendMessage(forward);
+ * ```
+ *
+ * 在 Kotlin 使用一般方法添加消息构建转发:
+ * ```
+ * val forward: ForwardMessage = buildForwardMessage {
+ *     add(123456L, "群员A", PlainText("消息"))
+ *     add(user, PlainText("msg"))
+ *     add(user) {
+ *         // this: MessageChainBuilder
+ *         add(At(user))
+ *         add(PlainText("msg"))
+ *     };
+ *     add(event) // 可添加 MessageEvent
+ * }
+ *
+ * group.sendMessage(forward);
+ * friend.sendMessage(forward);
+ * ```
+ *
+ * 在 Kotlin 也可以使用 DSL 构建一个转发:
  * ```
  * buildForwardMessage {
  *     123456789 named "鸽子 A" says "咕" // 意为 名为 "鸽子 A" 的用户 123456789 发送了一条内容为 "咕" 的消息
@@ -279,15 +342,18 @@ public annotation class ForwardMessageDsl
  *     987654321 named "鸽子 B" says "咕" // 未指定时间, 则自动顺序安排时间
  *     myFriend says "咕" // User.says
  *     bot says { // 构造消息链, 同 `buildMessageChain`
- *         +"发个图片试试"
- *         +Image("{90CCED1C-2D64-313B-5D66-46625CAB31D7}.jpg")
+ *         add("发个图片试试")
+ *         add(Image("{90CCED1C-2D64-313B-5D66-46625CAB31D7}.jpg"))
  *     }
  *     val member: Member = ...
  *     member says "我是幸运群员" // 使用 `User says` 则会同时设置发送人名称
  * }
  * ```
+ * DSL 语法在下文详细解释.
  *
- * # 语法
+ * 上述示例效果一样, 根据个人偏好选择.
+ *
+ * # Kotlin DSL 语法
  *
  * 下文中 `S` 代表消息发送人. 可接受: 发送人账号 id([Long] 或 [Int]) 或 [User]
  *
@@ -328,7 +394,7 @@ public annotation class ForwardMessageDsl
  */
 public class ForwardMessageBuilder private constructor(
     /**
-     * 消息语境. 可为 [Group] 或 [User]
+     * 消息语境. 可为 [Group] 或 [User]. 用来确定某 ID 的用户的昵称.
      */
     public val context: Contact,
     private val container: MutableList<ForwardMessage.INode>
@@ -380,6 +446,14 @@ public class ForwardMessageBuilder private constructor(
          */
         @ForwardMessageDsl
         public infix fun sender(user: User): BuilderNode =
+            apply { this.senderId(user.id); this.named(user.nameCardOrNick) }
+
+        /**
+         * 指定发送人 id 和名称.
+         * @since 2.6
+         */
+        @ForwardMessageDsl
+        public infix fun sender(user: UserOrBot): BuilderNode =
             apply { this.senderId(user.id); this.named(user.nameCardOrNick) }
 
         /**
@@ -501,6 +575,14 @@ public class ForwardMessageBuilder private constructor(
     @ForwardMessageDsl
     public infix fun User.says(message: Message): ForwardMessageBuilder = this.id named this.nameCardOrNick says message
 
+    /**
+     * 添加一条消息, 自动按顺序调整时间
+     * @since 2.6
+     */
+    @ForwardMessageDsl
+    public infix fun UserOrBot.says(message: Message): ForwardMessageBuilder =
+        this.id named this.nameCardOrNick says message
+
     /** 添加一条消息, 自动按顺序调整时间 */
     @ForwardMessageDsl
     public infix fun Bot.says(message: Message): ForwardMessageBuilder = this.id named this.smartName() says message
@@ -508,6 +590,14 @@ public class ForwardMessageBuilder private constructor(
     /** 构造并添加一个 [MessageChain], 自动按顺序调整时间 */
     @ForwardMessageDsl
     public inline infix fun User.says(chain: @ForwardMessageDsl MessageChainBuilder.() -> Unit): ForwardMessageBuilder =
+        this says (MessageChainBuilder().apply(chain).asMessageChain())
+
+    /**
+     * 构造并添加一个 [MessageChain], 自动按顺序调整时间
+     * @since 2.6
+     */
+    @ForwardMessageDsl
+    public inline infix fun UserOrBot.says(chain: @ForwardMessageDsl MessageChainBuilder.() -> Unit): ForwardMessageBuilder =
         this says (MessageChainBuilder().apply(chain).asMessageChain())
 
     /** 构造并添加一个 [MessageChain], 自动按顺序调整时间 */
@@ -541,6 +631,14 @@ public class ForwardMessageBuilder private constructor(
     @ForwardMessageDsl
     public infix fun User.at(time: Int): BuilderNode = this.id named this.nameCardOrNick at time
 
+    /**
+     * 为一条消息指定时间和发送人名称.
+     * @time 时间戳, 单位为秒
+     * @since 2.6
+     */
+    @ForwardMessageDsl
+    public infix fun UserOrBot.at(time: Int): BuilderNode = this.id named this.nameCardOrNick at time
+
     // endregion
 
 
@@ -559,6 +657,13 @@ public class ForwardMessageBuilder private constructor(
     @ForwardMessageDsl
     public infix fun User.named(name: String): BuilderNode = this.id.named(name)
 
+    /**
+     * 为一条消息指定发送人名称.
+     * @since 2.6
+     */
+    @ForwardMessageDsl
+    public infix fun UserOrBot.named(name: String): BuilderNode = this.id.named(name)
+
     @Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
     @kotlin.internal.LowPriorityInOverloadResolution // due to inference problem, `add(MessageEvent)` results in resolution ambiguity
     override fun add(element: ForwardMessage.INode): Boolean = container.add(element)
@@ -570,22 +675,87 @@ public class ForwardMessageBuilder private constructor(
      *
      * @since 2.1
      */
-    @ForwardMessageDsl
     public fun add(event: MessageEvent): ForwardMessageBuilder {
         return event.sender named event.senderName at event.time says event.message
     }
 
     // endregion
 
-    /** 构造 [ForwardMessage] */
-    public fun build(): ForwardMessage = RawForwardMessage(container.map {
-        ForwardMessage.Node(
-            it.senderId,
-            it.time,
-            it.senderName,
-            it.messageChain
-        )
-    }).render(this.displayStrategy)
+    // region common
+
+    /**
+     * 添加一个消息. 若不指定 [time], 将会使用 [currentTime] 自增 1 的时间.
+     * @since 2.6
+     */
+    @JvmOverloads
+    public fun add(sender: User, message: Message, time: Int = -1): ForwardMessageBuilder {
+        return if (time == -1) sender says message
+        else sender at time says message
+    }
+
+    /**
+     * 添加一个消息. 若不指定 [time], 将会使用 [currentTime] 自增 1 的时间.
+     * @since 2.6
+     */
+    @JvmOverloads
+    public fun add(sender: UserOrBot, message: Message, time: Int = -1): ForwardMessageBuilder {
+        return if (time == -1) sender says message
+        else sender at time says message
+    }
+
+    /**
+     * 添加一个消息. 若不指定 [time], 将会使用 [currentTime] 自增 1 的时间.
+     * @since 2.6
+     */
+    @JvmOverloads
+    public fun add(senderId: Long, senderName: String, message: Message, time: Int = -1): ForwardMessageBuilder {
+        return if (time == -1) senderId named senderName says message
+        else senderId named senderName at time says message
+    }
+
+    /**
+     * 构建并添加一个消息. 若不指定 [time], 将会使用 [currentTime] 自增 1 的时间.
+     * @since 2.6
+     * @see buildMessageChain
+     */
+    @JvmOverloads
+    public inline fun add(
+        senderId: Long,
+        senderName: String,
+        time: Int = -1,
+        builderAction: MessageChainBuilder.() -> Unit
+    ): ForwardMessageBuilder {
+        return add(senderId, senderName, time = time, message = buildMessageChain(builderAction))
+    }
+
+    /**
+     * 构建并添加一个消息. 若不指定 [time], 将会使用 [currentTime] 自增 1 的时间.
+     * @since 2.6
+     * @see buildMessageChain
+     */
+    @JvmOverloads
+    public inline fun add(
+        sender: UserOrBot,
+        time: Int = -1,
+        builderAction: MessageChainBuilder.() -> Unit
+    ): ForwardMessageBuilder {
+        return add(sender, time = time, message = buildMessageChain(builderAction))
+    }
+
+    // endregion
+
+    /**
+     * 构造 [RawForwardMessage]. [RawForwardMessage] 可以被多个 [DisplayStrategy] [渲染][RawForwardMessage.render].
+     * @since 2.6
+     */
+    public fun toRawForwardMessage(): RawForwardMessage = RawForwardMessage(container.map {
+        ForwardMessage.Node(it.senderId, it.time, it.senderName, it.messageChain)
+    })
+
+    /**
+     * 使用 [displayStrategy] 渲染并构造可以发送的 [ForwardMessage].
+     */
+    public fun build(): ForwardMessage = toRawForwardMessage().render(this.displayStrategy)
 
     internal fun Bot.smartName(): String = when (val c = this@ForwardMessageBuilder.context) {
         is Group -> c.botAsMember.nameCardOrNick

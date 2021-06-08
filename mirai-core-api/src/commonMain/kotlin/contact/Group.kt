@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -25,7 +25,8 @@ import net.mamoe.mirai.utils.OverFileSizeMaxException
 /**
  * 群.
  */
-public interface Group : Contact, CoroutineScope {
+@JvmBlockingBridge
+public interface Group : Contact, CoroutineScope, FileSupported {
     /**
      * 群名称.
      *
@@ -82,6 +83,7 @@ public interface Group : Contact, CoroutineScope {
     public override val avatarUrl: String
         get() = "https://p.qlogo.cn/gh/$id/${id}/640"
 
+
     /**
      * 群成员列表, 不含机器人自己, 含群主.
      *
@@ -123,7 +125,6 @@ public interface Group : Contact, CoroutineScope {
      * @throws IllegalStateException 当机器人为群主时
      * @return 退出成功时 true; 已经退出时 false
      */
-    @JvmBlockingBridge
     public suspend fun quit(): Boolean
 
     /**
@@ -141,14 +142,12 @@ public interface Group : Contact, CoroutineScope {
      *
      * @return 消息回执. 可进行撤回 ([MessageReceipt.recall])
      */
-    @JvmBlockingBridge
     public override suspend fun sendMessage(message: Message): MessageReceipt<Group>
 
     /**
      * 发送纯文本消息
      * @see sendMessage
      */
-    @JvmBlockingBridge
     public override suspend fun sendMessage(message: String): MessageReceipt<Group> =
         this.sendMessage(message.toPlainText())
 
@@ -163,10 +162,33 @@ public interface Group : Contact, CoroutineScope {
      * @throws EventCancelledException 当发送消息事件被取消
      * @throws OverFileSizeMaxException 当语音文件过大而被服务器拒绝上传时. (最大大小约为 1 MB)
      */
-    @JvmBlockingBridge
     public suspend fun uploadVoice(resource: ExternalResource): Voice
 
-    public companion object
+
+    /**
+     * 将一条消息设置为群精华消息, 需要管理员或群主权限.
+     * 操作成功返回 `true`.
+     *
+     * @throws PermissionDeniedException 没有权限时抛出
+     *
+     * @since 2.2
+     */
+    public suspend fun setEssenceMessage(source: MessageSource): Boolean
+
+    public companion object {
+        /**
+         * 将一条消息设置为群精华消息, 需要管理员或群主权限.
+         * 操作成功返回 `true`.
+         *
+         * @throws PermissionDeniedException 没有权限时抛出
+         *
+         * @see Group.setEssenceMessage
+         * @since 2.2
+         */
+        @JvmBlockingBridge
+        @JvmStatic
+        public suspend fun Group.setEssenceMessage(chain: MessageChain): Boolean = setEssenceMessage(chain.source)
+    }
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -11,8 +11,8 @@ package net.mamoe.mirai.internal.network.protocol.data.proto
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
-import net.mamoe.mirai.internal.network.protocol.packet.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.internal.utils.io.ProtoBuf
+import net.mamoe.mirai.utils.EMPTY_BYTE_ARRAY
 
 @Serializable
 internal class MultiMsg : ProtoBuf {
@@ -23,7 +23,7 @@ internal class MultiMsg : ProtoBuf {
 
     @Serializable
     internal class MultiMsgApplyDownReq(
-        @ProtoNumber(1) @JvmField val msgResid: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(1) @JvmField val msgResid: String = "",
         @ProtoNumber(2) @JvmField val msgType: Int = 0,
         @ProtoNumber(3) @JvmField val srcUin: Long = 0L
     ) : ProtoBuf
@@ -31,11 +31,11 @@ internal class MultiMsg : ProtoBuf {
     @Serializable
     internal class MultiMsgApplyDownRsp(
         @ProtoNumber(1) @JvmField val result: Int = 0,
-        @ProtoNumber(2) @JvmField val thumbDownPara: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(2) @JvmField val thumbDownPara: String = "",
         @ProtoNumber(3) @JvmField val msgKey: ByteArray = EMPTY_BYTE_ARRAY,
         @ProtoNumber(4) @JvmField val uint32DownIp: List<Int> = emptyList(),
         @ProtoNumber(5) @JvmField val uint32DownPort: List<Int> = emptyList(),
-        @ProtoNumber(6) @JvmField val msgResid: ByteArray = EMPTY_BYTE_ARRAY,
+        @ProtoNumber(6) @JvmField val msgResid: String = "",
         @ProtoNumber(7) @JvmField val msgExternInfo: ExternMsg? = null,
         @ProtoNumber(8) @JvmField val bytesDownIpV6: List<ByteArray> = emptyList(),
         @ProtoNumber(9) @JvmField val uint32DownV6Port: List<Int> = emptyList()

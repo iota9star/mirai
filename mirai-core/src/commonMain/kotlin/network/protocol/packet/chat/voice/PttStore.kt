@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -10,17 +10,17 @@
 package net.mamoe.mirai.internal.network.protocol.packet.chat.voice
 
 import kotlinx.io.core.ByteReadPacket
-import net.mamoe.mirai.internal.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.internal.QQAndroidBot
 import net.mamoe.mirai.internal.network.Packet
 import net.mamoe.mirai.internal.network.QQAndroidClient
 import net.mamoe.mirai.internal.network.protocol.data.proto.Cmd0x388
-import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacket
 import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacketFactory
+import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacketWithRespType
 import net.mamoe.mirai.internal.network.protocol.packet.buildOutgoingUniPacket
 import net.mamoe.mirai.internal.utils.io.serialization.readProtoBuf
 import net.mamoe.mirai.internal.utils.io.serialization.writeProtoBuf
 import net.mamoe.mirai.internal.utils.toIpV4AddressString
+import net.mamoe.mirai.utils.EMPTY_BYTE_ARRAY
 import net.mamoe.mirai.utils.ExternalResource
 import net.mamoe.mirai.utils.encodeToString
 import net.mamoe.mirai.utils.toUHexString
@@ -28,9 +28,10 @@ import net.mamoe.mirai.utils.toUHexString
 internal val ExternalResource.voiceCodec: Int
     get() {
         return when (formatName) {
-            "amr" -> 0  // amr
+            // 实际上 amr 是 0, 但用 1 也可以发. 为了避免 silk 错被以 amr 发送导致降音质就都用 1
+            "amr" -> 1  // amr
             "silk" -> 1  // silk V3
-            else -> 0     // use amr by default
+            else -> 1     // use amr by default
         }
     }
 
@@ -63,14 +64,12 @@ internal class PttStore {
             }
         }
 
-        @OptIn(ExperimentalStdlibApi::class)
-        operator fun invoke(
-            client: QQAndroidClient,
+        fun createTryUpPttPack(
             uin: Long,
             groupCode: Long,
             resource: ExternalResource
-        ): OutgoingPacket {
-            val pack = Cmd0x388.ReqBody(
+        ): Cmd0x388.ReqBody {
+            return Cmd0x388.ReqBody(
                 netType = 3, // wifi
                 subcmd = 3,
                 msgTryupPttReq = listOf(
@@ -87,12 +86,22 @@ internal class PttStore {
                         innerIp = 0,
                         buildVer = "6.5.5.663".encodeToByteArray(),
                         voiceLength = 1,
-                        codec = 0, // don't use resource.codec
+                        codec = resource.voiceCodec, // HTTP 时只支持 0
+                        // 2021/1/26 因为 #577 修改为 resource.voiceCodec
                         voiceType = 1,
                         boolNewUpChan = true
                     )
                 )
             )
+        }
+
+        operator fun invoke(
+            client: QQAndroidClient,
+            uin: Long,
+            groupCode: Long,
+            resource: ExternalResource
+        ): OutgoingPacketWithRespType<Response> {
+            val pack = createTryUpPttPack(uin, groupCode, resource)
             return buildOutgoingUniPacket(client) {
                 writeProtoBuf(Cmd0x388.ReqBody.serializer(), pack)
             }
@@ -118,7 +127,7 @@ internal class PttStore {
 
     }
 
-    object GroupPttDown : OutgoingPacketFactory<GroupPttDown.Response>("PttStore.GroupPttDown") {
+    object GroupPttDown : OutgoingPacketFactory<GroupPttDown.Response.DownLoadInfo>("PttStore.GroupPttDown") {
 
         sealed class Response : Packet {
             class DownLoadInfo(
@@ -142,7 +151,7 @@ internal class PttStore {
             dstUin: Long,
             md5: ByteArray
 
-        ): OutgoingPacket = buildOutgoingUniPacket(client) {
+        ) = buildOutgoingUniPacket(client) {
             writeProtoBuf(
                 Cmd0x388.ReqBody.serializer(), Cmd0x388.ReqBody(
                     netType = 3, // wifi
@@ -164,7 +173,7 @@ internal class PttStore {
             )
         }
 
-        override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): Response {
+        override suspend fun ByteReadPacket.decode(bot: QQAndroidBot): Response.DownLoadInfo {
             val resp0 = readProtoBuf(Cmd0x388.RspBody.serializer())
             val resp =
                 resp0.msgGetpttUrlRsp.firstOrNull() ?: error("cannot find `msgGetpttUrlRsp` from `Cmd0x388.RspBody`")

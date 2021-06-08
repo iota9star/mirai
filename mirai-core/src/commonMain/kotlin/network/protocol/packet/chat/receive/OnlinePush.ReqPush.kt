@@ -14,36 +14,42 @@
 
 package net.mamoe.mirai.internal.network.protocol.packet.chat.receive
 
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.core.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
 import net.mamoe.mirai.Mirai
 import net.mamoe.mirai.contact.*
-import net.mamoe.mirai.data.FriendInfoImpl
 import net.mamoe.mirai.data.GroupHonorType
-import net.mamoe.mirai.event.broadcast
 import net.mamoe.mirai.event.events.*
 import net.mamoe.mirai.internal.QQAndroidBot
 import net.mamoe.mirai.internal.contact.*
+import net.mamoe.mirai.internal.contact.info.FriendInfoImpl
+import net.mamoe.mirai.internal.contact.info.MemberInfoImpl
 import net.mamoe.mirai.internal.network.MultiPacketBySequence
 import net.mamoe.mirai.internal.network.Packet
 import net.mamoe.mirai.internal.network.QQAndroidClient
+import net.mamoe.mirai.internal.network.components.ContactUpdater
+import net.mamoe.mirai.internal.network.handler.logger
 import net.mamoe.mirai.internal.network.protocol.data.jce.MsgInfo
 import net.mamoe.mirai.internal.network.protocol.data.jce.MsgType0x210
 import net.mamoe.mirai.internal.network.protocol.data.jce.OnlinePushPack
 import net.mamoe.mirai.internal.network.protocol.data.jce.RequestPacket
-import net.mamoe.mirai.internal.network.protocol.data.proto.*
+import net.mamoe.mirai.internal.network.protocol.data.proto.Submsgtype0x115
+import net.mamoe.mirai.internal.network.protocol.data.proto.Submsgtype0x122
 import net.mamoe.mirai.internal.network.protocol.data.proto.Submsgtype0x27.SubMsgType0x27.*
 import net.mamoe.mirai.internal.network.protocol.data.proto.Submsgtype0x44.Submsgtype0x44
+import net.mamoe.mirai.internal.network.protocol.data.proto.Submsgtype0xb3
 import net.mamoe.mirai.internal.network.protocol.data.proto.TroopTips0x857
 import net.mamoe.mirai.internal.network.protocol.packet.IncomingPacketFactory
 import net.mamoe.mirai.internal.network.protocol.packet.OutgoingPacket
 import net.mamoe.mirai.internal.network.protocol.packet.buildResponseUniPacket
+import net.mamoe.mirai.internal.network.protocol.packet.list.FriendList
+import net.mamoe.mirai.internal.network.protocol.packet.sendAndExpect
 import net.mamoe.mirai.internal.utils.*
 import net.mamoe.mirai.internal.utils.io.ProtoBuf
 import net.mamoe.mirai.internal.utils.io.serialization.*
+import net.mamoe.mirai.internal.utils.parseToMessageDataList
 import net.mamoe.mirai.utils.*
 
 
@@ -53,17 +59,19 @@ internal object OnlinePushReqPush : IncomingPacketFactory<OnlinePushReqPush.ReqP
     "OnlinePush.RespPush"
 ) {
     // to reduce nesting depth
-    private fun List<MsgInfo>.deco(
+    private suspend fun List<MsgInfo>.deco(
         client: QQAndroidClient,
-        mapper: ByteReadPacket.(msgInfo: MsgInfo) -> Sequence<Packet>
+        mapper: suspend ByteReadPacket.(msgInfo: MsgInfo) -> Sequence<Packet>
     ): Sequence<Packet> {
-        return asSequence().filter { msg ->
-            client.syncingController.onlinePushReqPushCacheList.addCache(
+        return mapNotNull { msg ->
+            val successful = client.syncingController.onlinePushReqPushCacheList.addCache(
                 QQAndroidClient.MessageSvcSyncData.OnlinePushReqPushSyncId(
                     uid = msg.lMsgUid ?: 0, sequence = msg.shMsgSeq, time = msg.uMsgTime
                 )
             )
-        }.flatMap { it.vMsg.read { mapper(it) } }
+            if (!successful) return@mapNotNull null
+            msg.vMsg.read { mapper(msg) }
+        }.asSequence().flatten()
     }
 
 
@@ -71,8 +79,7 @@ internal object OnlinePushReqPush : IncomingPacketFactory<OnlinePushReqPush.ReqP
     @OptIn(ExperimentalStdlibApi::class)
     override suspend fun ByteReadPacket.decode(bot: QQAndroidBot, sequenceId: Int): ReqPushDecoded {
         val reqPushMsg = readUniPacket(OnlinePushPack.SvcReqPushMsg.serializer(), "req")
-        // bot.network.logger.debug { reqPushMsg._miraiContentToString() }
-
+        //bot.network.logger.debug { reqPushMsg._miraiContentToString() }
         val packets: Sequence<Packet> = reqPushMsg.vMsgInfos.deco(bot.client) { msgInfo ->
             when (msgInfo.shMsgType.toInt()) {
                 732 -> {
@@ -435,7 +442,7 @@ private object Transformers732 : Map<Int, Lambda732> by mapOf(
             else -> {
                 /*
                 bot.network.logger.debug("unknown Transformer732 0xunknown type: ${dataBytes[0].toString(16)
-                    .toUpperCase()}")
+                    .uppercase()}")
                 bot.network.logger.debug("unknown Transformer732 0xdata= ${readBytes().toUHexString()}")
                 */
                 return@lambda732 emptySequence()
@@ -488,22 +495,22 @@ private object Transformers732 : Map<Int, Lambda732> by mapOf(
 internal val ignoredLambda528: Lambda528 = lambda528 { _, _ -> emptySequence() }
 
 internal interface Lambda528 {
-    operator fun invoke(msg: MsgType0x210, bot: QQAndroidBot, msgInfo: MsgInfo): Sequence<Packet>
+    suspend operator fun invoke(msg: MsgType0x210, bot: QQAndroidBot, msgInfo: MsgInfo): Sequence<Packet>
 }
 
 @kotlin.internal.LowPriorityInOverloadResolution
-internal inline fun lambda528(crossinline block: MsgType0x210.(QQAndroidBot) -> Sequence<Packet>): Lambda528 {
+internal inline fun lambda528(crossinline block: suspend MsgType0x210.(QQAndroidBot) -> Sequence<Packet>): Lambda528 {
     return object : Lambda528 {
-        override fun invoke(msg: MsgType0x210, bot: QQAndroidBot, msgInfo: MsgInfo): Sequence<Packet> {
+        override suspend fun invoke(msg: MsgType0x210, bot: QQAndroidBot, msgInfo: MsgInfo): Sequence<Packet> {
             return block(msg, bot)
         }
 
     }
 }
 
-internal inline fun lambda528(crossinline block: MsgType0x210.(QQAndroidBot, MsgInfo) -> Sequence<Packet>): Lambda528 {
+internal inline fun lambda528(crossinline block: suspend MsgType0x210.(QQAndroidBot, MsgInfo) -> Sequence<Packet>): Lambda528 {
     return object : Lambda528 {
-        override fun invoke(msg: MsgType0x210, bot: QQAndroidBot, msgInfo: MsgInfo): Sequence<Packet> {
+        override suspend fun invoke(msg: MsgType0x210, bot: QQAndroidBot, msgInfo: MsgInfo): Sequence<Packet> {
             return block(msg, bot, msgInfo)
         }
 
@@ -594,29 +601,38 @@ internal object Transformers528 : Map<Long, Lambda528> by mapOf(
     },
     0x44L to lambda528 { bot ->
         val msg = vProtobuf.loadAs(Submsgtype0x44.MsgBody.serializer())
-        when {
-            msg.msgCleanCountMsg != null -> {
 
-            }
-            msg.msgFriendMsgSync != null -> {
-
-            }
-            msg.msgGroupMsgSync != null -> {
-                when (msg.msgGroupMsgSync.processflag) {
-                    1, 2 -> bot.network.launch {
-                        bot.groupListModifyLock.withLock {
-                            bot.createGroupForBot(msg.msgGroupMsgSync.grpCode)?.let {
-                                BotJoinGroupEvent.Active(it).broadcast()
-                            }
+        val packetList = mutableListOf<Packet>()
+        if (msg.msgFriendMsgSync != null) {
+            when (msg.msgFriendMsgSync.processtype) {
+                3, 9, 10 -> {
+                    if (bot.getFriend(msg.msgFriendMsgSync.fuin) == null) {
+                        val response: FriendList.GetFriendGroupList.Response =
+                            FriendList.GetFriendGroupList.forSingleFriend(
+                                bot.client,
+                                msg.msgFriendMsgSync.fuin
+                            ).sendAndExpect(bot)
+                        response.friendList.firstOrNull()?.let {
+                            val friend = Mirai.newFriend(bot, it.toMiraiFriendInfo())
+                            bot.friends.delegate.add(friend)
+                            packetList.add(FriendAddEvent(friend))
                         }
                     }
                 }
             }
-            else -> {
-                bot.network.logger.debug { "OnlinePush528 0x44L: " + msg._miraiContentToString() }
+        }
+        if (msg.msgGroupMsgSync != null) {
+            when (msg.msgGroupMsgSync.msgType) {
+                1, 2 -> {
+                    bot.components[ContactUpdater].groupListModifyLock.withLock {
+                        bot.createGroupForBot(Mirai.calculateGroupUinByGroupCode(msg.msgGroupMsgSync.grpCode))?.let {
+                            packetList.add(BotJoinGroupEvent.Active(it))
+                        }
+                    }
+                }
             }
         }
-        return@lambda528 emptySequence()
+        return@lambda528 packetList.asSequence()
     },
     // bot 在其他客户端被踢或主动退出而同步情况
     0xD4L to lambda528 { _ ->
@@ -708,7 +724,7 @@ internal object Transformers528 : Map<Long, Lambda528> by mapOf(
             return this.msgFrdRmk.asSequence().mapNotNull {
                 val friend = bot.getFriend(it.fuin) ?: return@mapNotNull null
                 val old: String
-                friend.checkIsFriendImpl().friendInfo.checkIsInfoImpl()
+                friend.checkIsFriendImpl().friendInfo
                     .also { info -> old = info.remark }
                     .remark = it.rmkName
                 // TODO: 2020/4/10 ADD REMARK QUERY
@@ -799,7 +815,7 @@ internal object Transformers528 : Map<Long, Lambda528> by mapOf(
                         return@mapNotNull MemberCardChangeEvent(old, new, member)
                     }
                     2 -> {
-                        if (info.value.singleOrNull()?.toInt() != 0) {
+                        if (info.value.singleOrNull()?.code != 0) {
                             bot.logger.debug {
                                 "Unknown Transformers528 0x27L ModGroupMemberProfile, field=${info.field}, value=${info.value}"
                             }

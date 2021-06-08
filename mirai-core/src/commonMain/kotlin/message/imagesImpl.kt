@@ -21,6 +21,7 @@ import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.contact.User
 import net.mamoe.mirai.internal.network.protocol.data.proto.HummerCommelem
 import net.mamoe.mirai.internal.network.protocol.data.proto.ImMsgBody
+import net.mamoe.mirai.internal.utils._miraiContentToString
 import net.mamoe.mirai.internal.utils.io.serialization.toByteArray
 import net.mamoe.mirai.message.data.*
 import net.mamoe.mirai.message.data.Image.Key.IMAGE_ID_REGEX
@@ -36,7 +37,12 @@ internal class OnlineGroupImageImpl(
 
     override val imageId: String = generateImageId(
         delegate.picMd5,
-        delegate.filePath.substringAfterLast('.')
+        delegate.filePath.substringAfterLast('.').lowercase().let { ext ->
+            if (ext == "null") {
+                // official clients might send `null`
+                getImageType(delegate.imageType)
+            } else ext
+        }
     ).takeIf {
         IMAGE_ID_REGEX.matches(it)
     } ?: generateImageId(delegate.picMd5)
@@ -65,8 +71,24 @@ internal class OnlineFriendImageImpl(
 OnlineFriendImage() {
     object Serializer : Image.FallbackSerializer("OnlineFriendImage")
 
-    override val imageId: String =
-        generateImageIdFromResourceId(delegate.resId, getImageType(delegate.imgType)) ?: delegate.resId
+    override val imageId: String = kotlin.run {
+        val imageType = getImageType(delegate.imgType)
+        generateImageIdFromResourceId(delegate.resId, imageType)
+            ?: kotlin.run {
+                if (delegate.picMd5.size == 16) generateImageId(delegate.picMd5, imageType)
+                else {
+                    MiraiLogger.TopLevel.warning(
+                        contextualBugReportException(
+                            "Failed to compute friend imageId: resId=${delegate.resId}",
+                            delegate._miraiContentToString(),
+                            additional = "并描述此时 Bot 是否正在从好友或群接受消息, 尽量附加该图片原文件"
+                        )
+                    )
+                    delegate.resId
+                }
+            }
+    }
+
     override val originUrl: String
         get() = if (delegate.origUrl.isNotBlank()) {
             "http://c2cpicdw.qpic.cn" + this.delegate.origUrl
@@ -95,6 +117,8 @@ OnlineFriendImage() {
  *  SHARPP: 1004
  */
 
+internal val UNKNOWN_IMAGE_TYPE_PROMPT_ENABLED = systemProp("mirai.unknown.image.type.logging", false)
+
 internal fun getImageType(id: Int): String {
     return when (id) {
         1000 -> "jpg"
@@ -103,7 +127,15 @@ internal fun getImageType(id: Int): String {
         1005 -> "bmp"
         2000 -> "gif"
         2001, 3 -> "png"
-        else -> DEFAULT_FORMAT_NAME
+        else -> {
+            if (UNKNOWN_IMAGE_TYPE_PROMPT_ENABLED) {
+                MiraiLogger.TopLevel.debug(
+                    "Unknown image id: $id. Stacktrace:",
+                    Exception()
+                )
+            }
+            DEFAULT_FORMAT_NAME
+        }
     }
 }
 
@@ -116,7 +148,7 @@ internal fun ImMsgBody.NotOnlineImage.toCustomFace(): ImMsgBody.CustomFace {
         bigUrl = bigUrl,
         origUrl = origUrl,
         //_400Height = 235,
-        //_400Url = "/gchatpic_new/1040400290/1041235568-2195821338-01E9451B70EDEAE3B37C101F1EEBF5B5/400?term=2",
+        //_400Url = "/gchatpic_new/000000000/1041235568-2195821338-01E9451B70EDEAE3B37C101F1EEBF5B5/400?term=2",
         //_400Width = 351,
         oldData = this.oldVerSendFile
     )
@@ -156,13 +188,17 @@ internal fun ImMsgBody.CustomFace.toNotOnlineImage(): ImMsgBody.NotOnlineImage {
 @Suppress("DEPRECATION")
 internal fun OfflineGroupImage.toJceData(): ImMsgBody.CustomFace {
     return ImMsgBody.CustomFace(
+        fileId = this.fileId ?: 0,
         filePath = this.imageId,
         picMd5 = this.md5,
         flag = ByteArray(4),
         //_400Height = 235,
-        //_400Url = "/gchatpic_new/1040400290/1041235568-2195821338-01E9451B70EDEAE3B37C101F1EEBF5B5/400?term=2",
+        //_400Url = "/gchatpic_new/000000000/1041235568-2195821338-01E9451B70EDEAE3B37C101F1EEBF5B5/400?term=2",
         //_400Width = 351,
-        oldData = oldData
+        oldData = oldData,
+//        pbReserve = "08 00 10 00 32 00 50 00 78 08".autoHexToBytes(),
+//        useful = 1,
+        //  pbReserve = CustomFaceExtPb.ResvAttr().toByteArray(CustomFaceExtPb.ResvAttr.serializer())
     )
 }
 
@@ -235,6 +271,9 @@ internal interface OfflineImage : Image
 internal data class OfflineGroupImage(
     override val imageId: String
 ) : GroupImage(), OfflineImage, DeferredOriginUrlAware {
+    @Transient
+    internal var fileId: Int? = null
+
     object Serializer : Image.FallbackSerializer("OfflineGroupImage")
 
     override fun getUrl(bot: Bot): String {

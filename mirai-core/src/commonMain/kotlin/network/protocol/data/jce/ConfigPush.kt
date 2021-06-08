@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
  *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
  *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
@@ -100,19 +100,23 @@ internal class _339(
     @TarsId(9) @JvmField val field1306: String = ""
 ) : JceStruct
 
+
+/**
+ * v8.5.5
+ */
 @Serializable
-internal class FileStoragePushFSSvcListFuckKotlin(
-    @TarsId(0) @JvmField val vUpLoadList: List<FileStorageServerListInfo>? = listOf(),
-    @TarsId(1) @JvmField val vPicDownLoadList: List<FileStorageServerListInfo>? = listOf(),
-    @TarsId(2) @JvmField val vGPicDownLoadList: List<FileStorageServerListInfo>? = null,
-    @TarsId(3) @JvmField val vQzoneProxyServiceList: List<FileStorageServerListInfo>? = null,
-    @TarsId(4) @JvmField val vUrlEncodeServiceList: List<FileStorageServerListInfo>? = null,
+internal class FileStoragePushFSSvcList(
+    @TarsId(0) @JvmField val vUpLoadList: List<FileStorageServerListInfo> = emptyList(),
+    @TarsId(1) @JvmField val vPicDownLoadList: List<FileStorageServerListInfo> = emptyList(),
+    @TarsId(2) @JvmField val vGPicDownLoadList: List<FileStorageServerListInfo> = emptyList(),
+    @TarsId(3) @JvmField val vQzoneProxyServiceList: List<FileStorageServerListInfo> = emptyList(),
+    @TarsId(4) @JvmField val vUrlEncodeServiceList: List<FileStorageServerListInfo> = emptyList(),
     @TarsId(5) @JvmField val bigDataChannel: BigDataChannel? = null,
-    @TarsId(6) @JvmField val vVipEmotionList: List<FileStorageServerListInfo>? = null,
-    @TarsId(7) @JvmField val vC2CPicDownList: List<FileStorageServerListInfo>? = null,
+    @TarsId(6) @JvmField val vVipEmotionList: List<FileStorageServerListInfo> = emptyList(),
+    @TarsId(7) @JvmField val vC2CPicDownList: List<FileStorageServerListInfo> = emptyList(),
     @TarsId(8) @JvmField val fmtIPInfo: FmtIPInfo? = null,
     @TarsId(9) @JvmField val domainIpChannel: DomainIpChannel? = null,
-    @TarsId(10) @JvmField val pttlist: ByteArray? = null
+    @TarsId(10) @JvmField val pttlist: ByteArray? = null,
 ) : JceStruct
 
 @Serializable
@@ -143,6 +147,55 @@ internal class PushReq(
     @TarsId(3) @JvmField val seq: Long
 ) : JceStruct, Packet
 
+@Serializable
+internal data class ServerListPush(
+    @TarsId(1) val mobileSSOServerList: List<ServerInfo>,
+    @TarsId(3) val wifiSSOServerList: List<ServerInfo>,
+    @TarsId(4) val reconnectNeeded: Int = 0,
+    //@JvmField @TarsId(5)  val skipped:Byte? = 0,
+    //@JvmField @TarsId(6)  val skipped:Byte? = 0,
+    //@JvmField @TarsId(7)  val skipped:Int? = 1,
+    @TarsId(8) val mobileHttpServerList: List<ServerInfo>,
+    @TarsId(9) val wifiHttpServerList: List<ServerInfo>,
+    @TarsId(10) val quicServerList: List<ServerInfo>,
+    @TarsId(11) val ssoServerListIpv6: List<ServerInfo>,
+    @TarsId(12) val httpServerListIpv6: List<ServerInfo>,
+    @TarsId(13) val quicServerListIpv6: List<ServerInfo>,
+    /**
+     * wifi下&1==1则启用
+     * 移动数据(mobile)下&2==2则启用
+     */
+    @TarsId(14) val ipv6ConfigVal: Byte? = 0,
+    //@JvmField @TarsId(15) val netTestDelay:Int? = 0,
+    @TarsId(16) val configDesc: String? = ""
+) : JceStruct {
+
+    @Serializable
+    data class ServerInfo(
+        @TarsId(1) val host: String,
+        @TarsId(2) val port: Int,
+        //@JvmField @TarsId(3) val skipped: Byte = 0,
+        //@JvmField @TarsId(4) val skipped: Byte = 0,
+        /**
+         * 2,3->http
+         * 0,1->socket
+         */
+        //@JvmField @TarsId(5) val protocolType: Byte? = 0,
+        //@JvmField @TarsId(6) val skipped: Int? = 8,
+        //@JvmField @TarsId(7) val skipped: Byte? = 0,
+        @TarsId(8) val location: String = "",
+        /**
+         * cm->China mobile 中国移动
+         * uni->China unicom 中国联通
+         * others->其他
+         */
+        @TarsId(9) val ispName: String = ""
+    ) : JceStruct {
+        override fun toString(): String {
+            return "$host:$port"
+        }
+    }
+}
 @Serializable
 internal class PushResp(
     @TarsId(1) @JvmField val type: Int,

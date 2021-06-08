@@ -18,42 +18,24 @@ plugins {
     id("kotlinx-atomicfu")
     id("net.mamoe.kotlin-jvm-blocking-bridge")
     `maven-publish`
-    id("com.jfrog.bintray")
 }
 
 description = "mirai-core utilities"
-
-val isAndroidSDKAvailable: Boolean by project
-
-afterEvaluate {
-    tasks.getByName("compileKotlinCommon").enabled = false
-    tasks.getByName("compileTestKotlinCommon").enabled = false
-
-    tasks.getByName("compileCommonMainKotlinMetadata").enabled = false
-    tasks.getByName("compileKotlinMetadata").enabled = false
-}
 
 kotlin {
     explicitApi()
 
     if (isAndroidSDKAvailable) {
-        apply(from = rootProject.file("gradle/android.gradle"))
-        android("android") {
-            publishAllLibraryVariants()
+//        apply(from = rootProject.file("gradle/android.gradle"))
+//        android("android") {
+//            publishAllLibraryVariants()
+//        }
+        jvm("android") {
+            attributes.attribute(KotlinPlatformType.attribute, KotlinPlatformType.androidJvm)
+            //   publishAllLibraryVariants()
         }
     } else {
-        println(
-            """Android SDK 可能未安装.
-                $name 的 Android 目标编译将不会进行. 
-                这不会影响 Android 以外的平台的编译.
-            """.trimIndent()
-        )
-        println(
-            """Android SDK might not be installed.
-                Android target of $name will not be compiled. 
-                It does no influence on the compilation of other platforms.
-            """.trimIndent()
-        )
+        printAndroidNotInstalled()
     }
 
     jvm("common") {
@@ -69,7 +51,6 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                api(kotlin("serialization"))
                 api(kotlin("reflect"))
 
                 api1(`kotlinx-serialization-core`)
@@ -87,8 +68,10 @@ kotlin {
         }
 
         if (isAndroidSDKAvailable) {
-            androidMain {
+            val androidMain by getting {
+                //
                 dependencies {
+                    compileOnly(`android-runtime`)
                     api1(`ktor-client-android`)
                 }
             }
@@ -102,6 +85,21 @@ kotlin {
             }
         }
     }
+}
+
+if (isAndroidSDKAvailable) {
+    tasks.register("checkAndroidApiLevel") {
+        doFirst {
+            analyzes.AndroidApiLevelCheck.check(
+                buildDir.resolve("classes/kotlin/android/main"),
+                project.property("mirai.android.target.api.level")!!.toString().toInt(),
+                project
+            )
+        }
+        group = "verification"
+        this.mustRunAfter("androidMainClasses")
+    }
+    tasks.getByName("androidTest").dependsOn("checkAndroidApiLevel")
 }
 
 fun org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler.implementation1(dependencyNotation: String) =

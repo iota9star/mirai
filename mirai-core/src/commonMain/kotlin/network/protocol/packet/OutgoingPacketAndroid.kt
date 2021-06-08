@@ -10,29 +10,93 @@
 package net.mamoe.mirai.internal.network.protocol.packet
 
 
-import kotlinx.io.core.BytePacketBuilder
-import kotlinx.io.core.ByteReadPacket
-import kotlinx.io.core.buildPacket
-import kotlinx.io.core.writeFully
+import kotlinx.io.core.*
+import net.mamoe.mirai.internal.QQAndroidBot
+import net.mamoe.mirai.internal.network.Packet
 import net.mamoe.mirai.internal.network.QQAndroidClient
+import net.mamoe.mirai.internal.network.appClientVersion
+import net.mamoe.mirai.internal.network.handler.NetworkHandler
 import net.mamoe.mirai.internal.utils.io.encryptAndWrite
 import net.mamoe.mirai.internal.utils.io.writeHex
 import net.mamoe.mirai.internal.utils.io.writeIntLVPacket
+import net.mamoe.mirai.utils.EMPTY_BYTE_ARRAY
+import net.mamoe.mirai.utils.KEY_16_ZEROS
 
-internal class OutgoingPacket constructor(
+@kotlin.Suppress("unused")
+internal class OutgoingPacketWithRespType<R : Packet?> constructor(
+    name: String?,
+    commandName: String,
+    sequenceId: Int,
+    delegate: ByteReadPacket
+) : OutgoingPacket(name, commandName, sequenceId, delegate)
+
+// TODO: 2021/4/12 generalize
+internal open class OutgoingPacket constructor(
     name: String?,
     val commandName: String,
     val sequenceId: Int,
-    val delegate: ByteReadPacket
+    delegate: ByteReadPacket
 ) {
+    val delegate = delegate.readBytes()
     val name: String = name ?: commandName
 }
 
-internal val KEY_16_ZEROS = ByteArray(16)
-internal val EMPTY_BYTE_ARRAY = ByteArray(0)
+internal class IncomingPacket constructor(
+    val commandName: String,
+    val sequenceId: Int,
+
+    val data: Packet?,
+    /**
+     * If not `null`, [data] is `null`
+     */
+    val exception: Throwable?, // may complete with exception (thrown by decoders)
+) {
+    init {
+        if (exception != null) require(data == null) { "When exception is not null, data must be null." }
+        if (data != null) require(exception == null) { "When data is not null, exception must be null." }
+    }
+
+    override fun toString(): String {
+        return if (exception == null) {
+            "IncomingPacket(cmd=$commandName, seq=$sequenceId, SUCCESS, r=$data)"
+        } else {
+            "IncomingPacket(cmd=$commandName, seq=$sequenceId, FAILURE, e=$exception)"
+        }
+    }
+}
+
+@Suppress("UNCHECKED_CAST")
+internal suspend inline fun <E : Packet> OutgoingPacketWithRespType<E>.sendAndExpect(
+    network: NetworkHandler,
+    timeoutMillis: Long = 5000,
+    retry: Int = 2
+): E = network.sendAndExpect(this, timeoutMillis, retry) as E
+
+@Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "UNCHECKED_CAST")
+@kotlin.internal.LowPriorityInOverloadResolution
+internal suspend inline fun <E : Packet> OutgoingPacket.sendAndExpect(
+    network: NetworkHandler,
+    timeoutMillis: Long = 5000,
+    retry: Int = 2
+): E = network.sendAndExpect(this, timeoutMillis, retry) as E
+
+internal suspend inline fun <E : Packet> OutgoingPacketWithRespType<E>.sendAndExpect(
+    bot: QQAndroidBot,
+    timeoutMillis: Long = 5000,
+    retry: Int = 2
+): E = (this@sendAndExpect as OutgoingPacket).sendAndExpect(bot.network, timeoutMillis, retry)
+
+@Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "UNCHECKED_CAST")
+@kotlin.internal.LowPriorityInOverloadResolution
+internal suspend inline fun <E : Packet> OutgoingPacket.sendAndExpect(
+    bot: QQAndroidBot,
+    timeoutMillis: Long = 5000,
+    retry: Int = 2
+): E = bot.network.sendAndExpect(this, timeoutMillis, retry) as E
+
 
 @Suppress("DuplicatedCode")
-internal inline fun OutgoingPacketFactory<*>.buildOutgoingUniPacket(
+internal inline fun <R : Packet?> OutgoingPacketFactory<R>.buildOutgoingUniPacket(
     client: QQAndroidClient,
     bodyType: Byte = 1, // 1: PB?
     name: String? = this.commandName,
@@ -41,9 +105,9 @@ internal inline fun OutgoingPacketFactory<*>.buildOutgoingUniPacket(
     extraData: ByteReadPacket = BRP_STUB,
     sequenceId: Int = client.nextSsoSequenceId(),
     body: BytePacketBuilder.(sequenceId: Int) -> Unit
-): OutgoingPacket {
+): OutgoingPacketWithRespType<R> {
 
-    return OutgoingPacket(name, commandName, sequenceId, buildPacket {
+    return OutgoingPacketWithRespType(name, commandName, sequenceId, buildPacket {
         writeIntLVPacket(lengthOffset = { it + 4 }) {
             writeInt(0x0B)
             writeByte(bodyType)
@@ -63,7 +127,7 @@ internal inline fun OutgoingPacketFactory<*>.buildOutgoingUniPacket(
 }
 
 
-internal inline fun IncomingPacketFactory<*>.buildResponseUniPacket(
+internal inline fun <R : Packet?> IncomingPacketFactory<R>.buildResponseUniPacket(
     client: QQAndroidClient,
     bodyType: Byte = 1, // 1: PB?
     name: String? = this.responseCommandName,
@@ -72,9 +136,9 @@ internal inline fun IncomingPacketFactory<*>.buildResponseUniPacket(
     extraData: ByteReadPacket = BRP_STUB,
     sequenceId: Int = client.nextSsoSequenceId(),
     body: BytePacketBuilder.(sequenceId: Int) -> Unit
-): OutgoingPacket {
+): OutgoingPacketWithRespType<R> {
     @Suppress("DuplicatedCode")
-    return OutgoingPacket(name, commandName, sequenceId, buildPacket {
+    return OutgoingPacketWithRespType(name, commandName, sequenceId, buildPacket {
         writeIntLVPacket(lengthOffset = { it + 4 }) {
             writeInt(0x0B)
             writeByte(bodyType)
@@ -126,7 +190,7 @@ internal val NO_ENCRYPT: ByteArray = ByteArray(0)
 /**
  * com.tencent.qphone.base.util.CodecWarpper#encodeRequest(int, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, byte[], int, int, java.lang.String, byte, byte, byte, byte[], byte[], boolean)
  */
-internal inline fun OutgoingPacketFactory<*>.buildLoginOutgoingPacket(
+internal inline fun <R : Packet?> OutgoingPacketFactory<R>.buildLoginOutgoingPacket(
     client: QQAndroidClient,
     bodyType: Byte,
     extraData: ByteArray = EMPTY_BYTE_ARRAY,
@@ -134,10 +198,10 @@ internal inline fun OutgoingPacketFactory<*>.buildLoginOutgoingPacket(
     commandName: String = this.commandName,
     key: ByteArray = KEY_16_ZEROS,
     body: BytePacketBuilder.(sequenceId: Int) -> Unit
-): OutgoingPacket {
+): OutgoingPacketWithRespType<R> {
     val sequenceId: Int = client.nextSsoSequenceId()
 
-    return OutgoingPacket(name, commandName, sequenceId, buildPacket {
+    return OutgoingPacketWithRespType(name, commandName, sequenceId, buildPacket {
         writeIntLVPacket(lengthOffset = { it + 4 }) {
             writeInt(0x00_00_00_0A)
             writeByte(bodyType)
@@ -238,7 +302,7 @@ internal fun BytePacketBuilder.writeOicqRequestPacket(
     val body = encryptMethod.makeBody(client, bodyBlock)
     writeByte(0x02) // head
     writeShort((27 + 2 + body.remaining).toShort()) // orthodox algorithm
-    writeShort(client.protocolVersion)
+    writeShort(8001)
     writeShort(commandId.toShort())
     writeShort(1) // const??
     writeInt(client.uin.toInt())

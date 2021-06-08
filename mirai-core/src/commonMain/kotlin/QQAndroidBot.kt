@@ -10,28 +10,38 @@
 
 package net.mamoe.mirai.internal
 
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
-import kotlinx.coroutines.sync.Mutex
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.runBlocking
 import net.mamoe.mirai.Bot
-import net.mamoe.mirai.LowLevelApi
 import net.mamoe.mirai.Mirai
-import net.mamoe.mirai.contact.*
-import net.mamoe.mirai.data.*
-import net.mamoe.mirai.internal.contact.OtherClientImpl
-import net.mamoe.mirai.internal.contact.StrangerInfoImpl
+import net.mamoe.mirai.contact.Group
+import net.mamoe.mirai.event.events.BotOfflineEvent
+import net.mamoe.mirai.event.events.BotOnlineEvent
+import net.mamoe.mirai.event.events.BotReloginEvent
 import net.mamoe.mirai.internal.contact.checkIsGroupImpl
-import net.mamoe.mirai.internal.contact.uin
-import net.mamoe.mirai.internal.message.*
-import net.mamoe.mirai.internal.network.QQAndroidBotNetworkHandler
-import net.mamoe.mirai.internal.network.QQAndroidClient
-import net.mamoe.mirai.internal.network.protocol.packet.chat.*
-import net.mamoe.mirai.message.data.*
-import net.mamoe.mirai.network.LoginFailedException
-import net.mamoe.mirai.utils.*
+import net.mamoe.mirai.internal.network.component.ComponentStorage
+import net.mamoe.mirai.internal.network.component.ComponentStorageDelegate
+import net.mamoe.mirai.internal.network.component.ConcurrentComponentStorage
+import net.mamoe.mirai.internal.network.components.*
+import net.mamoe.mirai.internal.network.context.SsoProcessorContext
+import net.mamoe.mirai.internal.network.context.SsoProcessorContextImpl
+import net.mamoe.mirai.internal.network.handler.NetworkHandler
+import net.mamoe.mirai.internal.network.handler.NetworkHandler.State
+import net.mamoe.mirai.internal.network.handler.NetworkHandlerContextImpl
+import net.mamoe.mirai.internal.network.handler.NetworkHandlerSupport
+import net.mamoe.mirai.internal.network.handler.NetworkHandlerSupport.BaseStateImpl
+import net.mamoe.mirai.internal.network.handler.selector.FactoryKeepAliveNetworkHandlerSelector
+import net.mamoe.mirai.internal.network.handler.selector.NetworkException
+import net.mamoe.mirai.internal.network.handler.selector.SelectorNetworkHandler
+import net.mamoe.mirai.internal.network.handler.state.StateChangedObserver
+import net.mamoe.mirai.internal.network.handler.state.StateObserver
+import net.mamoe.mirai.internal.network.handler.state.safe
+import net.mamoe.mirai.internal.network.impl.netty.NettyNetworkHandlerFactory
+import net.mamoe.mirai.internal.utils.subLogger
+import net.mamoe.mirai.utils.BotConfiguration
+import net.mamoe.mirai.utils.MiraiLogger
+import net.mamoe.mirai.utils.warning
 import kotlin.contracts.contract
-import kotlin.coroutines.CoroutineContext
-import net.mamoe.mirai.internal.network.protocol.data.jce.FriendInfo as JceFriendInfo
 
 internal fun Bot.asQQAndroidBot(): QQAndroidBot {
     contract {
@@ -41,64 +51,145 @@ internal fun Bot.asQQAndroidBot(): QQAndroidBot {
     return this as QQAndroidBot
 }
 
-internal fun QQAndroidBot.createOtherClient(
-    info: OtherClientInfo,
-): OtherClientImpl {
-    return OtherClientImpl(this, coroutineContext, info)
-}
-
 @Suppress("INVISIBLE_MEMBER", "BooleanLiteralArgument", "OverridingDeprecatedMember")
-internal class QQAndroidBot constructor(
-    account: BotAccount,
-    configuration: BotConfiguration
-) : AbstractBot<QQAndroidBotNetworkHandler>(configuration, account.id) {
-    @Suppress("LeakingThis")
-    val client: QQAndroidClient =
-        QQAndroidClient(
-            account,
-            bot = this,
-            device = configuration.deviceInfo?.invoke(this) ?: DeviceInfo.random()
-        )
-    internal var firstLoginSucceed: Boolean = false
+internal open class QQAndroidBot constructor(
+    internal val account: BotAccount,
+    configuration: BotConfiguration,
+) : AbstractBot(configuration, account.id) {
+    override val bot: QQAndroidBot get() = this
+    val client get() = components[SsoProcessor].client
 
-    inline val json get() = configuration.json
 
-    override val friends: ContactList<Friend> = ContactList()
+    ///////////////////////////////////////////////////////////////////////////
+    // network
+    ///////////////////////////////////////////////////////////////////////////
 
-    override lateinit var nick: String
+    // also called by tests.
+    fun ComponentStorage.stateObserverChain(): StateObserver {
+        val components = this
+        val eventDispatcher = this[EventDispatcher]
+        return StateObserver.chainOfNotNull(
+            components[BotInitProcessor].asObserver(),
+            object : StateChangedObserver(State.OK) {
+                private val shouldBroadcastRelogin = atomic(false)
 
-    internal var selfInfo: JceFriendInfo? = null
-        get() = field ?: error("selfInfo is not yet initialized")
-        set(it) {
-            checkNotNull(it)
-            field = it
-            nick = it.nick
-        }
-
-    override val asFriend: Friend by lazy {
-        @OptIn(LowLevelApi::class)
-        Mirai.newFriend(this, FriendInfoImpl(uin, nick, ""))
+                override fun stateChanged0(
+                    networkHandler: NetworkHandlerSupport,
+                    previous: BaseStateImpl,
+                    new: BaseStateImpl
+                ) {
+                    eventDispatcher.broadcastAsync(BotOnlineEvent(bot)).onSuccess {
+                        if (!shouldBroadcastRelogin.compareAndSet(false, true)) {
+                            eventDispatcher.broadcastAsync(BotReloginEvent(bot, new.getCause()))
+                        }
+                    }
+                }
+            },
+            StateChangedObserver(State.OK, State.CLOSED) { new ->
+                val cause = new.getCause()
+                if (cause is NetworkException && cause.recoverable) {
+                    eventDispatcher.broadcastAsync(BotOfflineEvent.Dropped(bot, new.getCause()))
+                    logger.warning { "Connection lost. Attempting to reconnect..." }
+                } else {
+                    eventDispatcher.broadcastAsync(BotOfflineEvent.Active(bot, new.getCause()))
+                }
+            },
+            StateChangedObserver(to = State.OK) { new ->
+                components[BotOfflineEventMonitor].attachJob(bot, new)
+            },
+            StateChangedObserver(State.OK, State.CLOSED) {
+                runBlocking {
+                    try {
+                        components[SsoProcessor].logout(network)
+                    } catch (ignored: Exception) {
+                    }
+                }
+            },
+        ).safe(logger.subLogger("StateObserver"))
     }
 
-    override val groups: ContactList<Group> = ContactList()
+
+    private val networkLogger: MiraiLogger by lazy { configuration.networkLoggerSupplier(this) }
+    final override val components: ComponentStorage by lazy {
+        createDefaultComponents().apply {
+            set(StateObserver, stateObserverChain())
+        }
+    }
+
+    open fun createDefaultComponents(): ConcurrentComponentStorage {
+        return ConcurrentComponentStorage().apply {
+            val components = ComponentStorageDelegate { this@QQAndroidBot.components }
+
+            // There's no need to interrupt a broadcasting event when network handler closed.
+            set(EventDispatcher, EventDispatcherImpl(bot.coroutineContext, logger.subLogger("EventDispatcher")))
+
+            set(SsoProcessorContext, SsoProcessorContextImpl(bot))
+            set(SsoProcessor, SsoProcessorImpl(get(SsoProcessorContext)))
+            set(HeartbeatProcessor, HeartbeatProcessorImpl())
+            set(HeartbeatScheduler, TimeBasedHeartbeatSchedulerImpl(networkLogger.subLogger("HeartbeatScheduler")))
+            set(KeyRefreshProcessor, KeyRefreshProcessorImpl(networkLogger.subLogger("KeyRefreshProcessor")))
+            set(ConfigPushProcessor, ConfigPushProcessorImpl(networkLogger.subLogger("ConfigPushProcessor")))
+            set(BotOfflineEventMonitor, BotOfflineEventMonitorImpl())
+
+            set(BotInitProcessor, BotInitProcessorImpl(bot, components, networkLogger.subLogger("BotInitProcessor")))
+            set(ContactCacheService, ContactCacheServiceImpl(bot, networkLogger.subLogger("ContactCacheService")))
+            set(ContactUpdater, ContactUpdaterImpl(bot, components, networkLogger.subLogger("ContactUpdater")))
+            set(
+                BdhSessionSyncer,
+                BdhSessionSyncerImpl(configuration, components, networkLogger.subLogger("BotSessionSyncer"))
+            )
+            set(
+                MessageSvcSyncer,
+                MessageSvcSyncerImpl(bot, bot.coroutineContext, networkLogger.subLogger("MessageSvcSyncer"))
+            )
+            set(ServerList, ServerListImpl(networkLogger.subLogger("ServerList")))
+            set(PacketLoggingStrategy, PacketLoggingStrategyImpl(bot))
+            set(
+                PacketHandler, PacketHandlerChain(
+                    LoggingPacketHandlerAdapter(get(PacketLoggingStrategy), networkLogger),
+                    EventBroadcasterPacketHandler(components),
+                    CallPacketFactoryPacketHandler(bot)
+                )
+            )
+            set(PacketCodec, PacketCodecImpl())
+            set(
+                OtherClientUpdater,
+                OtherClientUpdaterImpl(bot, components, networkLogger.subLogger("OtherClientUpdater"))
+            )
+            set(ConfigPushSyncer, ConfigPushSyncerImpl())
+        }
+    }
+
+
+    override fun createNetworkHandler(): NetworkHandler {
+        val context = NetworkHandlerContextImpl(
+            this,
+            networkLogger,
+            components
+        )
+        return SelectorNetworkHandler(
+            context,
+            FactoryKeepAliveNetworkHandlerSelector(
+                configuration.reconnectionRetryTimes.coerceIn(1, Int.MAX_VALUE),
+                NettyNetworkHandlerFactory,
+                context
+            )
+        ) // We can move the factory to configuration but this is not necessary for now.
+    }
 
     /**
-     * Final process for 'login'
-     */
-    @ThisApiMustBeUsedInWithConnectionLockBlock
-    @Throws(LoginFailedException::class) // only
-    override suspend fun relogin(cause: Throwable?) {
-        client.useNextServers { host, port ->
-            network.closeEverythingAndRelogin(host, port, cause, 0)
-        }
-    }
+     * 获取 获取群公告 所需的 bkn 参数
+     * */ // TODO: 2021/4/26 extract it after #1141 merged
+    val bkn: Int
+        get() = client.wLoginSigInfo.sKey.data
+            .fold(5381) { acc: Int, b: Byte -> acc + acc.shl(5) + b.toInt() }
+            .and(Int.MAX_VALUE)
 
-    override fun createNetworkHandler(coroutineContext: CoroutineContext): QQAndroidBotNetworkHandler {
-        return QQAndroidBotNetworkHandler(coroutineContext, this)
-    }
+    ///////////////////////////////////////////////////////////////////////////
+    // contacts
+    ///////////////////////////////////////////////////////////////////////////
 
-    @JvmField
-    val groupListModifyLock = Mutex()
+    override lateinit var nick: String
 
     // internally visible only
     fun getGroupByUin(uin: Long): Group {
@@ -109,70 +200,4 @@ internal class QQAndroidBot constructor(
     fun getGroupByUinOrNull(uin: Long): Group? {
         return groups.firstOrNull { it.checkIsGroupImpl(); it.uin == uin }
     }
-
-
-    /**
-     * 获取 获取群公告 所需的 bkn 参数
-     * */
-    val bkn: Int
-        get() = client.wLoginSigInfo.sKey.data
-            .fold(5381) { acc: Int, b: Byte -> acc + acc.shl(5) + b.toInt() }
-            .and(Int.MAX_VALUE)
-    override val asStranger: Stranger by lazy { Mirai.newStranger(bot, StrangerInfoImpl(bot.id, bot.nick)) }
-    override val strangers: ContactList<Stranger> = ContactList()
-}
-
-internal val EMPTY_BYTE_ARRAY = ByteArray(0)
-
-internal fun RichMessage.Key.longMessage(brief: String, resId: String, timeSeconds: Long): LongMessageInternal {
-    val limited: String = if (brief.length > 30) {
-        brief.take(30) + "…"
-    } else {
-        brief
-    }
-
-    val template = """
-                <?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-                <msg serviceID="35" templateID="1" action="viewMultiMsg"
-                     brief="$limited"
-                     m_resid="$resId"
-                     m_fileName="$timeSeconds" sourceMsgId="0" url=""
-                     flag="3" adverSign="0" multiMsgFlag="1">
-                    <item layout="1">
-                        <title>$limited</title>
-                        <hr hidden="false" style="0"/>
-                        <summary>点击查看完整消息</summary>
-                    </item>
-                    <source name="聊天记录" icon="" action="" appid="-1"/>
-                </msg>
-            """.trimIndent()
-
-    return LongMessageInternal(template, resId)
-}
-
-
-internal fun RichMessage.Key.forwardMessage(
-    resId: String,
-    timeSeconds: Long,
-    forwardMessage: ForwardMessage,
-): ForwardMessageInternal = with(forwardMessage) {
-    val template = """
-        <?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-        <msg serviceID="35" templateID="1" action="viewMultiMsg" brief="$brief"
-             m_resid="$resId" m_fileName="$timeSeconds"
-             tSum="3" sourceMsgId="0" url="" flag="3" adverSign="0" multiMsgFlag="0">
-            <item layout="1" advertiser_id="0" aid="0">
-                <title size="34" maxLines="2" lineSpace="12">$title</title>
-                ${
-        preview.joinToString("") {
-            """<title size="26" color="#777777" maxLines="2" lineSpace="12">$it</title>"""
-        }
-    }
-                <hr hidden="false" style="0"/>
-                <summary size="26" color="#777777">$summary</summary>
-            </item>
-            <source name="$source" icon="" action="" appid="-1"/>
-        </msg>
-    """.trimIndent().replace("\n", " ")
-    return ForwardMessageInternal(template)
 }
