@@ -13,19 +13,29 @@ import net.mamoe.mirai.internal.network.handler.NetworkHandler
 import net.mamoe.mirai.internal.network.handler.NetworkHandlerSupport
 import net.mamoe.mirai.utils.MiraiLogger
 import net.mamoe.mirai.utils.debug
+import net.mamoe.mirai.utils.systemProp
 
 internal class LoggingStateObserver(
     val logger: MiraiLogger,
-    private val showStacktrace: Boolean = false
+    private val showStacktrace: Boolean = false,
 ) : StateObserver {
-    override fun toString(): String {
-        return "LoggingStateObserver"
+    override fun toString(): String = "LoggingStateObserver(logger=${logger.identity})"
+
+    override fun beforeStateChanged(
+        networkHandler: NetworkHandlerSupport,
+        previous: NetworkHandlerSupport.BaseStateImpl,
+        new: NetworkHandlerSupport.BaseStateImpl,
+    ) {
+        logger.debug(
+            { "Before change: ${previous.correspondingState} -> ${new.correspondingState}" },
+            if (showStacktrace) Exception("Show stacktrace") else null
+        )
     }
 
     override fun stateChanged(
         networkHandler: NetworkHandlerSupport,
         previous: NetworkHandlerSupport.BaseStateImpl,
-        new: NetworkHandlerSupport.BaseStateImpl
+        new: NetworkHandlerSupport.BaseStateImpl,
     ) {
         logger.debug(
             { "State changed: ${previous.correspondingState} -> ${new.correspondingState}" },
@@ -36,7 +46,7 @@ internal class LoggingStateObserver(
     override fun exceptionOnCreatingNewState(
         networkHandler: NetworkHandlerSupport,
         previousState: NetworkHandlerSupport.BaseStateImpl,
-        exception: Throwable
+        exception: Throwable,
     ) {
         logger.debug { "State changed: ${previousState.correspondingState} -> $exception" }
     }
@@ -48,7 +58,7 @@ internal class LoggingStateObserver(
     override fun afterStateResume(
         networkHandler: NetworkHandler,
         state: NetworkHandlerSupport.BaseStateImpl,
-        result: Result<Unit>
+        result: Result<Unit>,
     ) {
         result.fold(
             onSuccess = {
@@ -58,5 +68,34 @@ internal class LoggingStateObserver(
                 logger.debug { "State resumed: ${state.correspondingState} ${result.exceptionOrNull()}" }
             }
         )
+    }
+
+    companion object {
+        /**
+         * - `on`/`true` for simple logging
+         * - `full` for logging with stacktrace
+         */
+        var ENABLED = systemProp(
+            "mirai.debug.network.state.observer.logging",
+            "off"
+        ).lowercase()
+
+        fun createLoggingIfEnabled(): StateObserver? {
+            return when (ENABLED) {
+                "full" -> {
+                    SafeStateObserver(
+                        LoggingStateObserver(MiraiLogger.create("States"), true),
+                        MiraiLogger.create("LoggingStateObserver errors")
+                    )
+                }
+                "on", "true" -> {
+                    SafeStateObserver(
+                        LoggingStateObserver(MiraiLogger.create("States"), false),
+                        MiraiLogger.create("LoggingStateObserver errors")
+                    )
+                }
+                else -> null
+            }
+        }
     }
 }

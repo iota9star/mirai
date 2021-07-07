@@ -14,6 +14,7 @@ import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.bundling.Jar
 import org.gradle.kotlin.dsl.*
 import org.jetbrains.kotlin.gradle.dsl.*
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
@@ -34,8 +35,6 @@ fun Project.configureJvmTarget() {
         kotlinOptions.languageVersion = "1.5"
         kotlinOptions.jvmTarget = defaultVer.toString()
         kotlinOptions.freeCompilerArgs += "-Xjvm-default=all"
-        kotlinOptions.freeCompilerArgs += "-XXLanguage:-JvmIrEnabledByDefault"
-        // TODO: 2021/5/6 We are still using legacy JVM backend since kotlinx.serialization is not yet supported in Kotlin 1.5.0
     }
 
     tasks.withType(KotlinJvmCompile::class)
@@ -180,6 +179,18 @@ fun Project.configureFlattenSourceSets() {
         findByName("test")?.apply {
             resources.setSrcDirs(listOf(projectDir.resolve("resources")))
             java.setSrcDirs(listOf(projectDir.resolve("test")))
+        }
+    }
+}
+
+fun Project.configureJarManifest() {
+    this.tasks.withType<Jar> {
+        manifest {
+            attributes(
+                "Implementation-Vendor" to "Mamoe Technologies",
+                "Implementation-Title" to this@configureJarManifest.name.toString(),
+                "Implementation-Version" to this@configureJarManifest.version.toString()
+            )
         }
     }
 }

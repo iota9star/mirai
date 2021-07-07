@@ -14,6 +14,8 @@ import net.mamoe.mirai.internal.network.component.ComponentKey
 import net.mamoe.mirai.internal.network.component.ComponentStorage
 import net.mamoe.mirai.internal.network.context.SsoProcessorContext
 import net.mamoe.mirai.internal.network.handler.NetworkHandlerSupport
+import net.mamoe.mirai.internal.network.handler.selector.PacketTimeoutException
+import net.mamoe.mirai.utils.BotConfiguration.HeartbeatStrategy.*
 import net.mamoe.mirai.utils.MiraiLogger
 import net.mamoe.mirai.utils.info
 
@@ -43,18 +45,40 @@ internal class TimeBasedHeartbeatSchedulerImpl(
         val context: ComponentStorage = network.context
         val heartbeatProcessor = context[HeartbeatProcessor]
 
+        val configuration = context[SsoProcessorContext].configuration
+        val timeout = configuration.heartbeatTimeoutMillis
+
         val list = mutableListOf<Job>()
-        list += launchHeartbeatJobAsync(
-            scope = scope,
-            name = "StatHeartbeat",
-            timeout = { context[SsoProcessorContext].configuration.statHeartbeatPeriodMillis },
-            action = { heartbeatProcessor.doStatHeartbeatNow(network) },
-            onHeartFailure = onHeartFailure
-        )
+        when (context[SsoProcessorContext].configuration.heartbeatStrategy) {
+            STAT_HB -> {
+                list += launchHeartbeatJobAsync(
+                    scope = scope,
+                    name = "StatHeartbeat",
+                    delay = { configuration.statHeartbeatPeriodMillis },
+                    timeout = { timeout },
+                    action = { heartbeatProcessor.doStatHeartbeatNow(network) },
+                    onHeartFailure = onHeartFailure
+                )
+            }
+            REGISTER -> {
+                list += launchHeartbeatJobAsync(
+                    scope = scope,
+                    name = "RegisterHeartbeat",
+                    delay = { configuration.statHeartbeatPeriodMillis },
+                    timeout = { timeout },
+                    action = { heartbeatProcessor.doRegisterNow(network) },
+                    onHeartFailure = onHeartFailure
+                )
+            }
+            NONE -> {
+            }
+        }
+
         list += launchHeartbeatJobAsync(
             scope = scope,
             name = "AliveHeartbeat",
-            timeout = { context[SsoProcessorContext].configuration.heartbeatPeriodMillis },
+            delay = { configuration.heartbeatPeriodMillis },
+            timeout = { timeout },
             action = { heartbeatProcessor.doAliveHeartbeatNow(network) },
             onHeartFailure = onHeartFailure
         )
@@ -64,6 +88,7 @@ internal class TimeBasedHeartbeatSchedulerImpl(
     private fun launchHeartbeatJobAsync(
         scope: CoroutineScope,
         name: String,
+        delay: () -> Long,
         timeout: () -> Long,
         action: suspend () -> Unit,
         onHeartFailure: HeartbeatFailureHandler,
@@ -71,15 +96,17 @@ internal class TimeBasedHeartbeatSchedulerImpl(
         return scope.async(CoroutineName("$name Scheduler")) {
             while (isActive) {
                 try {
-                    delay(timeout())
+                    delay(delay())
                 } catch (e: CancellationException) {
                     return@async // considered normally cancel
                 }
 
                 try {
-                    action()
+                    withTimeout(timeout()) {
+                        action()
+                    }
                 } catch (e: Throwable) {
-                    onHeartFailure(name, e)
+                    onHeartFailure(name, PacketTimeoutException("Timeout receiving Heartbeat response", e))
                 }
             }
         }.apply {

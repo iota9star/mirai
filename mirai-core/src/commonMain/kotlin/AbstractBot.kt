@@ -25,6 +25,7 @@ import net.mamoe.mirai.internal.network.components.SsoProcessor
 import net.mamoe.mirai.internal.network.handler.NetworkHandler
 import net.mamoe.mirai.internal.network.handler.selector.NetworkException
 import net.mamoe.mirai.internal.network.impl.netty.asCoroutineExceptionHandler
+import net.mamoe.mirai.network.LoginFailedException
 import net.mamoe.mirai.supervisorJob
 import net.mamoe.mirai.utils.*
 import kotlin.collections.set
@@ -79,6 +80,9 @@ internal abstract class AbstractBot constructor(
     // overrides
     ///////////////////////////////////////////////////////////////////////////
 
+    /**
+     * Bot level components plus network level components.
+     */
     abstract val components: ComponentStorage
 
     final override val isOnline: Boolean get() = network.isOk()
@@ -119,6 +123,9 @@ internal abstract class AbstractBot constructor(
             val cause = e.unwrap<NetworkException>()
             if (!components[SsoProcessor].firstLoginSucceed) {
                 this.close(cause) // failed to do first login.
+            }
+            if (cause is LoginFailedException && cause.killBot) {
+                close(cause)
             }
             throw cause
         }

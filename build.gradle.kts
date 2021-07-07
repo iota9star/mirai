@@ -70,7 +70,6 @@ tasks.register("publishMiraiCoreArtifactsToMavenLocal") {
 }
 
 analyzes.CompiledCodeVerify.run { registerAllVerifyTasks() }
-postktcompile.PostKotlinCompile.run { registerForAll(rootProject) }
 
 allprojects {
     group = "net.mamoe"
@@ -102,6 +101,7 @@ allprojects {
         if (isKotlinJvmProject) {
             configureFlattenSourceSets()
         }
+        configureJarManifest()
     }
 }
 

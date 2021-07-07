@@ -1,10 +1,10 @@
 /*
  * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
- *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
- *  https://github.com/mamoe/mirai/blob/master/LICENSE
+ * https://github.com/mamoe/mirai/blob/dev/LICENSE
  */
 
 package net.mamoe.mirai.internal.network.components
@@ -34,8 +34,9 @@ import java.io.File
 internal interface AccountSecretsManager {
     fun saveSecrets(account: BotAccount, secrets: AccountSecrets)
     fun getSecrets(account: BotAccount): AccountSecrets?
+    fun invalidate()
 
-    companion object : ComponentKey<BdhSessionSyncer>
+    companion object : ComponentKey<AccountSecretsManager>
 }
 
 internal fun AccountSecretsManager.getSecretsOrCreate(account: BotAccount, device: DeviceInfo): AccountSecrets {
@@ -58,6 +59,11 @@ internal class MemoryAccountSecretsManager : AccountSecretsManager {
 
     @Synchronized
     override fun getSecrets(account: BotAccount): AccountSecrets? = this.instance
+
+    @Synchronized
+    override fun invalidate() {
+        instance = null
+    }
 }
 
 
@@ -65,6 +71,7 @@ internal class FileCacheAccountSecretsManager(
     val file: File,
     val logger: MiraiLogger,
 ) : AccountSecretsManager {
+    @Synchronized
     override fun saveSecrets(account: BotAccount, secrets: AccountSecrets) {
         if (secrets.wLoginSigInfoField == null) return
 
@@ -78,6 +85,7 @@ internal class FileCacheAccountSecretsManager(
         logger.info { "Saved account secrets to local cache for fast login." }
     }
 
+    @Synchronized
     override fun getSecrets(account: BotAccount): AccountSecrets? {
         return getSecretsImpl(account)
     }
@@ -87,13 +95,22 @@ internal class FileCacheAccountSecretsManager(
         val loaded = kotlin.runCatching {
             TEA.decrypt(file.readBytes(), account.passwordMd5).loadAs(AccountSecretsImpl.serializer())
         }.getOrElse { e ->
-            logger.error("Failed to load account secrets from local cache. Invalidating cache...", e)
+            if (e.message == "Field 'ecdhInitialPublicKey' is required for type with serial name 'net.mamoe.mirai.internal.network.context.AccountSecretsImpl', but it was missing") {
+                logger.info { "Detected old account secrets, invalidating..." }
+            } else {
+                logger.error("Failed to load account secrets from local cache. Invalidating cache...", e)
+            }
             file.delete()
             return null
         }
 
         logger.info { "Loaded account secrets from local cache." }
         return loaded
+    }
+
+    @Synchronized
+    override fun invalidate() {
+        file.delete()
     }
 }
 
@@ -108,6 +125,11 @@ internal class CombinedAccountSecretsManager(
 
     override fun getSecrets(account: BotAccount): AccountSecrets? {
         return primary.getSecrets(account) ?: alternative.getSecrets(account)
+    }
+
+    override fun invalidate() {
+        primary.invalidate()
+        alternative.invalidate()
     }
 }
 

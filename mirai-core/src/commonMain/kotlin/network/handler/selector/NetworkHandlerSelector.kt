@@ -21,7 +21,7 @@ import net.mamoe.mirai.internal.network.handler.NetworkHandlerFactory
  *
  * @see SelectorNetworkHandler
  */
-internal interface NetworkHandlerSelector<H : NetworkHandler> {
+internal interface NetworkHandlerSelector<out H : NetworkHandler> {
     /**
      * Returns an instance immediately without suspension, or `null` if instance not ready. Returned [H] can be in any states.
      *
@@ -40,6 +40,7 @@ internal interface NetworkHandlerSelector<H : NetworkHandler> {
      * Returned [H] can be in [NetworkHandler.State.OK] only (but it may happen that the state changed just after returning from this function).
      *
      * This function may throw exceptions, which would be propagated to the original caller of [SelectorNetworkHandler.resumeConnection].
+     * @throws MaxAttemptsReachedException
      */
     suspend fun awaitResumeInstance(): H
 }

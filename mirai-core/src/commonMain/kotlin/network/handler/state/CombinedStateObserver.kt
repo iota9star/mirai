@@ -13,52 +13,64 @@ import net.mamoe.mirai.internal.network.handler.NetworkHandler
 import net.mamoe.mirai.internal.network.handler.NetworkHandlerSupport
 
 internal class CombinedStateObserver(
-    private val first: StateObserver,
-    private val last: StateObserver,
+    private val list: List<StateObserver>,
 ) : StateObserver {
+    override fun beforeStateChanged(
+        networkHandler: NetworkHandlerSupport,
+        previous: NetworkHandlerSupport.BaseStateImpl,
+        new: NetworkHandlerSupport.BaseStateImpl,
+    ) {
+        list.forEach { it.beforeStateChanged(networkHandler, previous, new) }
+    }
+
     override fun stateChanged(
         networkHandler: NetworkHandlerSupport,
         previous: NetworkHandlerSupport.BaseStateImpl,
-        new: NetworkHandlerSupport.BaseStateImpl
+        new: NetworkHandlerSupport.BaseStateImpl,
     ) {
-        first.stateChanged(networkHandler, previous, new)
-        last.stateChanged(networkHandler, previous, new)
+        list.forEach { it.stateChanged(networkHandler, previous, new) }
     }
 
     override fun exceptionOnCreatingNewState(
         networkHandler: NetworkHandlerSupport,
         previousState: NetworkHandlerSupport.BaseStateImpl,
-        exception: Throwable
+        exception: Throwable,
     ) {
-        first.exceptionOnCreatingNewState(networkHandler, previousState, exception)
-        last.exceptionOnCreatingNewState(networkHandler, previousState, exception)
+        list.forEach { it.exceptionOnCreatingNewState(networkHandler, previousState, exception) }
     }
 
     override fun beforeStateResume(networkHandler: NetworkHandler, state: NetworkHandlerSupport.BaseStateImpl) {
-        first.beforeStateResume(networkHandler, state)
-        last.beforeStateResume(networkHandler, state)
+        list.forEach { it.beforeStateResume(networkHandler, state) }
     }
 
     override fun afterStateResume(
         networkHandler: NetworkHandler,
         state: NetworkHandlerSupport.BaseStateImpl,
-        result: Result<Unit>
+        result: Result<Unit>,
     ) {
-        first.afterStateResume(networkHandler, state, result)
-        last.afterStateResume(networkHandler, state, result)
+        list.forEach { it.afterStateResume(networkHandler, state, result) }
     }
 
     override fun toString(): String {
-        return "CombinedStateObserver(first=$first, last=$last)"
+        return list.joinToString(
+            prefix = "CombinedStateObserver[",
+            postfix = "]",
+            separator = " -> "
+        ) { it.toString() }
     }
 
     companion object {
         operator fun StateObserver?.plus(last: StateObserver?): StateObserver {
             return when {
+                last == null -> this ?: StateObserver.NOP
                 this == null -> last
-                last == null -> this
-                else -> CombinedStateObserver(this, last)
-            } ?: StateObserver.NOP
+                else -> {
+                    val result = mutableListOf<StateObserver>()
+                    if (this is CombinedStateObserver) result.addAll(this.list) else result.add(this)
+                    if (last is CombinedStateObserver) result.addAll(last.list) else result.add(last)
+                    CombinedStateObserver(result)
+                }
+            }
         }
     }
 }

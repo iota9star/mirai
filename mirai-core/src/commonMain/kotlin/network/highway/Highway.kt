@@ -1,10 +1,10 @@
 /*
  * Copyright 2019-2021 Mamoe Technologies and contributors.
  *
- *  此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- *  Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
- *  https://github.com/mamoe/mirai/blob/master/LICENSE
+ * https://github.com/mamoe/mirai/blob/dev/LICENSE
  */
 
 package net.mamoe.mirai.internal.network.highway
@@ -57,7 +57,7 @@ internal object Highway {
         resource: ExternalResource,
         kind: ResourceKind,
         commandId: Int,  // group image=2, friend image=1, groupPtt=29
-        extendInfo: ByteArray = EMPTY_BYTE_ARRAY,
+        extendInfo: ByteArray? = null,
         encrypt: Boolean = false,
         initialTicket: ByteArray? = null, // null then use sig session
         tryOnce: Boolean = false,
@@ -99,7 +99,9 @@ internal object Highway {
                 dataFlag = dataFlag,
                 localeId = localeId,
                 fileMd5 = md5,
-                extendInfo = if (encrypt) TEA.encrypt(extendInfo, bdhSession.sessionKey) else extendInfo,
+                extendInfo = extendInfo?.let {
+                    if (encrypt) TEA.encrypt(extendInfo, bdhSession.sessionKey) else extendInfo
+                },
                 callback = callback
             ).sendConcurrently(
                 createConnection = { createConnection(ip, port) },
@@ -116,7 +118,7 @@ internal object Highway {
 }
 
 internal enum class ResourceKind(
-    private val display: String
+    private val display: String,
 ) {
     PRIVATE_IMAGE("private image"),
     GROUP_IMAGE("group image"),
@@ -127,13 +129,15 @@ internal enum class ResourceKind(
 
     LONG_MESSAGE("long message"),
     FORWARD_MESSAGE("forward message"),
+
+    ANNOUNCEMENT_IMAGE("announcement image"),
     ;
 
     override fun toString(): String = display
 }
 
 internal enum class ChannelKind(
-    private val display: String
+    private val display: String,
 ) {
     HIGHWAY("Highway"),
     HTTP("Http")
@@ -148,7 +152,7 @@ internal suspend inline fun <reified R, reified IP> tryServersUpload(
     resourceSize: Long,
     resourceKind: ResourceKind,
     channelKind: ChannelKind,
-    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R
+    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R,
 ) = servers.retryWithServers(
     (resourceSize * 1000 / 1024 / 10).coerceAtLeast(5000),
     onFail = { throw IllegalStateException("cannot upload $resourceKind, failed on all servers.", it) }
@@ -183,7 +187,7 @@ internal suspend inline fun <reified R> tryServersDownload(
     servers: Collection<Pair<Int, Int>>,
     resourceKind: ResourceKind,
     channelKind: ChannelKind,
-    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R
+    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R,
 ) = servers.retryWithServers(
     5000,
     onFail = { throw IllegalStateException("cannot download $resourceKind, failed on all servers.", it) }
@@ -198,7 +202,7 @@ internal suspend inline fun <reified R> tryDownload(
     times: Int = 1,
     resourceKind: ResourceKind,
     channelKind: ChannelKind,
-    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R
+    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R,
 ) = retryCatching(times) {
     tryDownloadImplEach(bot, channelKind, resourceKind, host, port, implOnEachServer)
 }.getOrElse { throw IllegalStateException("Cannot download $resourceKind", it) }
@@ -210,7 +214,7 @@ private suspend inline fun <reified R> tryDownloadImplEach(
     resourceKind: ResourceKind,
     host: String,
     port: Int,
-    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R
+    crossinline implOnEachServer: suspend (ip: String, port: Int) -> R,
 ): R {
     bot.network.logger.verbose {
         "[${channelKind}] Downloading $resourceKind from ${host}:$port"
@@ -235,7 +239,7 @@ private suspend inline fun <reified R> tryDownloadImplEach(
 
 internal suspend fun ChunkedFlowSession<ByteReadPacket>.sendSequentially(
     socket: PlatformSocket,
-    respCallback: (resp: CSDataHighwayHead.RspDataHighwayHead) -> Unit = {}
+    respCallback: (resp: CSDataHighwayHead.RspDataHighwayHead) -> Unit = {},
 ) {
     contract { callsInPlace(respCallback, InvocationKind.UNKNOWN) }
     useAll {
@@ -297,7 +301,7 @@ internal interface HighwayProtocolChannel {
 //            }
 
 internal class SynchronousHighwayProtocolChannel(
-    val action: suspend (ByteReadPacket) -> ByteArray
+    val action: suspend (ByteReadPacket) -> ByteArray,
 ) : HighwayProtocolChannel {
     @Volatile
     var result: ByteArray? = null
@@ -318,6 +322,15 @@ internal suspend fun ChunkedFlowSession<ByteReadPacket>.sendConcurrently(
     respCallback: (resp: CSDataHighwayHead.RspDataHighwayHead) -> Unit = {},
 ) = coroutineScope {
     val channel = asFlow().produceIn0(this)
+
+    coroutineContext.job.invokeOnCompletion {
+        if (channel is Channel<*>) {
+            try {
+                channel.close() // safely closes resource
+            } catch (ignored: Exception) {
+            }
+        }
+    }
     // 'single thread' producer emits chunks to channel
 
     repeat(coroutines) {
@@ -366,7 +379,7 @@ internal fun highwayPacketSession(
     data: ExternalResource,
     fileMd5: ByteArray,
     sizePerPacket: Int = ByteArrayPool.BUFFER_SIZE,
-    extendInfo: ByteArray = EMPTY_BYTE_ARRAY,
+    extendInfo: ByteArray? = null,
     callback: Highway.ProgressionCallback? = null,
 ): ChunkedFlowSession<ByteReadPacket> {
     ByteArrayPool.checkBufferSize(sizePerPacket)
